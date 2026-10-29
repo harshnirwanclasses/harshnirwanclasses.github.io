@@ -48,6 +48,9 @@ header{position:relative;overflow:hidden;padding:calc(14px + env(safe-area-inset
 .hero h1 span{background:linear-gradient(90deg,var(--orange),var(--gold));-webkit-background-clip:text;background-clip:text;color:transparent}
 .hero p.tagline{font-size:.84rem;color:#c5d6cb}
 .photo{flex:none;width:clamp(104px,30vw,150px);aspect-ratio:1;border-radius:50%;padding:4px;background:conic-gradient(from 200deg,var(--orange),var(--gold),var(--green),var(--orange));box-shadow:0 0 34px rgba(255,106,26,.45),0 0 70px rgba(34,197,94,.18);position:relative}
+.pcol{flex:none;display:flex;flex-direction:column;align-items:center;gap:8px}
+.pname{font-weight:800;font-size:.95rem;text-align:center;line-height:1.15;white-space:nowrap;text-shadow:0 2px 10px rgba(0,0,0,.6)}
+.pname small{display:block;font-size:.66rem;font-weight:600;color:var(--orange2);letter-spacing:.12em;text-transform:uppercase;margin-top:2px}
 .photo img{width:100%;height:100%;border-radius:50%;object-fit:cover;display:block;border:3px solid #06130c}
 .photo .badge{position:absolute;bottom:2px;right:-4px;background:var(--orange);color:#fff;font-size:.62rem;font-weight:800;padding:3px 8px;border-radius:99px;box-shadow:0 2px 10px rgba(0,0,0,.4);letter-spacing:.04em}
 .creds{display:flex;gap:6px;flex-wrap:wrap;margin-top:14px}
@@ -210,7 +213,7 @@ footer{max-width:900px;margin:0 auto;padding:4px 16px 24px;font-size:.75rem;colo
       <h1>Crack <span>PE exams</span> with Harsh Nirwan</h1>
       <p class="tagline">KVS · NVS · DSSSB · UP TGT/PGT · UGC NET — video lectures, notes & mock tests</p>
     </div>
-    <div class="photo"><img src="coach.jpg" alt="Harsh Nirwan, Physical Education coach" width="150" height="150"><span class="badge">NET ✓</span></div>
+    <div class="pcol"><div class="photo"><img src="coach.jpg" alt="Harsh Nirwan, Physical Education coach" width="150" height="150"><span class="badge">NET ✓</span></div><div class="pname">Harsh Nirwan<small>PE Coach</small></div></div>
   </div>
   <div class="creds"><span>🎓 M.P.Ed · IGIPESS, DU</span><span>✅ UGC NET Qualified</span><span>🤾 15 yrs Handball</span></div>
   <div class="role" id="roleBadge">🎓 Welcome</div>
