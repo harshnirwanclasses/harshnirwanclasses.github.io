@@ -102,6 +102,8 @@ nav button.on{color:var(--green);font-weight:600}nav button.on .e{filter:none;op
 .modal .box{background:#fff;border-radius:18px;width:100%;max-width:760px;max-height:92vh;overflow:auto;padding:14px}
 .modal video{width:100%;border-radius:12px;background:#000;max-height:70vh}
 .modal iframe{width:100%;height:70vh;border:0;border-radius:12px;background:#f1f1f1}
+.pdfv canvas{display:block;width:100%;height:auto;margin:0 auto 8px;box-shadow:0 1px 4px rgba(0,0,0,.15);background:#fff}
+.pdfv{max-height:76vh;overflow:auto;background:#e9e6de;border-radius:12px;padding:8px}
 .modal iframe.yt{height:auto;aspect-ratio:16/9}
 .toast{position:fixed;left:50%;bottom:90px;transform:translateX(-50%);background:var(--ink);color:#fff;padding:10px 16px;border-radius:12px;font-size:.85rem;z-index:60;display:none;max-width:90vw}
 .toast.on{display:block;animation:fade .2s}
@@ -213,6 +215,7 @@ footer{max-width:900px;margin:0 auto;padding:4px 16px 24px;font-size:.75rem;colo
             <label class="chk" style="border:0;padding:4px 0"><input type="radio" name="src" value="upload" checked><span>Upload file</span></label>
             <label class="chk" style="border:0;padding:4px 0"><input type="radio" name="src" value="youtube"><span>YouTube link</span></label>
             <label class="chk" style="border:0;padding:4px 0"><input type="radio" name="src" value="link"><span>Other link</span></label>
+            <label class="chk" style="border:0;padding:4px 0"><input type="radio" name="src" value="pdf"><span>PDF file</span></label>
             <label class="chk" style="border:0;padding:4px 0"><input type="radio" name="src" value="html"><span>HTML file</span></label>
           </div>
           <div id="srcUpload">
@@ -220,6 +223,13 @@ footer{max-width:900px;margin:0 auto;padding:4px 16px 24px;font-size:.75rem;colo
               <input type="file" id="upFile" accept="video/*,application/pdf" hidden>
               <div style="font-size:1.8rem">⬆️</div>
               <div id="dropTxt"><b>Tap to choose a file</b><br><span class="hi">MP4 video or PDF notes</span></div>
+            </label>
+          </div>
+          <div id="srcPdf" style="display:none">
+            <label class="drop" id="dropP">
+              <input type="file" id="upPdf" accept="application/pdf,.pdf" hidden>
+              <div style="font-size:1.8rem">📄</div>
+              <div id="dropPTxt"><b>Tap to choose a PDF</b><br><span class="hi">Up to 15 MB</span></div>
             </label>
           </div>
           <div id="srcHtml" style="display:none">

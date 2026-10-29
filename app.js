@@ -159,7 +159,7 @@ function renderLibrary(kind){
 function itemHTML(m,own){
   const v=m.type==="video",open=isOpen(m);
   return `<div class="item"><div class="thumb ${open?(v?"v":"p"):"l"}">${open?(v?"▶️":"📄"):"🔒"}</div><div class="meta"><b>${esc(m.title)}</b>
-  ${m.desc?`<small>${esc(m.desc)}</small><br>`:""}${m.source==="html"?`<span class="tag">HTML</span>`:""}${m.free?`<span class="tag f">FREE</span>`:`<span class="tag o">PREMIUM</span>`}<span class="tag">${esc(m.topic)}</span>
+  ${m.desc?`<small>${esc(m.desc)}</small><br>`:""}${m.source==="html"?`<span class="tag">HTML</span>`:m.source==="pdf"?`<span class="tag">PDF</span>`:""}${m.free?`<span class="tag f">FREE</span>`:`<span class="tag o">PREMIUM</span>`}<span class="tag">${esc(m.topic)}</span>
   <small> ${fmtSize(m.sizeBytes)}${m.sizeBytes?" · ":""}${fmtDate(m.createdAt)}</small></div>
   <div style="display:flex;flex-direction:column;gap:6px">${open?`<button class="btn sm" data-open="${esc(m.id)}">${v?"Watch":"Open"}</button>`:`<button class="btn sm alt" data-go="unlock">🔒 Unlock</button>`}
   ${own?`<button class="btn sm danger" data-del="${esc(m.id)}">Delete</button>`:""}</div></div>`;
@@ -179,6 +179,17 @@ async function openItem(id){
   $("#mTitle").textContent=m.title;
   $("#mBody").innerHTML=`<div class="empty">⏳ Opening…</div>`; $("#modal").classList.add("on");
   try{
+    if(loc.pdfDoc){
+      const {getDoc,doc,db}=S.fb; const meta=await getDoc(doc(db,"pdfchunks",id));
+      if(!meta.exists()){$("#mBody").innerHTML=`<div class="empty">This PDF isn't available.</div>`;return}
+      const n=meta.data().parts||0; $("#mBody").innerHTML=`<div class="empty">⏳ Loading PDF… 0/${n}</div>`; let got=0;
+      const parts=await Promise.all(Array.from({length:n},(_,i)=>getDoc(doc(db,"pdfchunks",id,"parts",String(i))).then(s=>{got++;const e=$("#mBody .empty");if(e)e.textContent=`⏳ Loading PDF… ${got}/${n}`;return b64ToBytes(s.data().d)})));
+      const total=parts.reduce((t,p)=>t+p.length,0),bytes=new Uint8Array(total);let o=0;parts.forEach(p=>{bytes.set(p,o);o+=p.length});
+      $("#mBody").innerHTML=`<div class="pdfv" id="pdfBox"><div class="empty">⏳ Opening…</div></div>${m.free?`<div style="margin-top:10px"><a class="btn sm ghost" id="pdfDl">⬇ Download</a></div>`:""}${m.desc?`<p class="hi" style="margin-top:8px">${esc(m.desc)}</p>`:""}`;
+      if(m.free){const u=URL.createObjectURL(new Blob([bytes],{type:"application/pdf"}));const dl=$("#pdfDl");dl.href=u;dl.download=(m.title||"notes").replace(/[^\w\- ]+/g,"")+".pdf"}
+      await renderPdf(bytes.slice(),$("#pdfBox"));
+      return;
+    }
     if(loc.htmlDoc){
       const hs=await S.fb.getDoc(S.fb.doc(S.fb.db,"htmlnotes",id));
       if(!hs.exists()){$("#mBody").innerHTML=`<div class="empty">This document isn't available.</div>`;return}
@@ -210,6 +221,7 @@ function askDelete(id){
       if(loc&&loc.storagePath){try{await deleteObject(ref(storage,loc.storagePath))}catch(e){}}
       if(!m.free){try{await deleteDoc(doc(db,"premium",id))}catch(e){}}
       if(m.source==="html"){try{await deleteDoc(doc(db,"htmlnotes",id))}catch(e){}}
+      if(m.source==="pdf"){try{const md=await S.fb.getDoc(doc(db,"pdfchunks",id));const n=md.exists()?md.data().parts||0:0;for(let i=0;i<n;i++)await deleteDoc(doc(db,"pdfchunks",id,"parts",String(i)));await deleteDoc(doc(db,"pdfchunks",id))}catch(e){}}
       await deleteDoc(doc(db,"materials",id)); toast("Deleted");
     }catch(err){toast("Could not delete: "+errMsg(err))}
   });
@@ -282,9 +294,23 @@ async function submitPayment(e){
 const upFile=$("#upFile");
 if(!USE_STORAGE){const r=document.querySelector('input[name="src"][value="upload"]');r.closest("label").style.display="none";document.querySelector('input[name="src"][value="youtube"]').checked=true;$("#srcUpload").style.display="none";$("#srcLink").style.display="block";
   $("#srcLink").insertAdjacentHTML("beforeend",`<p class="hi" style="margin-top:6px">Videos: upload to YouTube as <b>Unlisted</b> and paste the link. PDFs: choose "Other link", paste a Google Drive link (Share → Anyone with the link).</p>`)}
-function showSrc(){const v=document.querySelector('input[name="src"]:checked').value;$("#srcUpload").style.display=v==="upload"?"block":"none";$("#srcHtml").style.display=v==="html"?"block":"none";$("#srcLink").style.display=(v==="youtube"||v==="link")?"block":"none";if(v==="youtube")$("#upKind").value="video"}
+function showSrc(){const v=document.querySelector('input[name="src"]:checked').value;$("#srcUpload").style.display=v==="upload"?"block":"none";$("#srcHtml").style.display=v==="html"?"block":"none";$("#srcPdf").style.display=v==="pdf"?"block":"none";$("#srcLink").style.display=(v==="youtube"||v==="link")?"block":"none";if(v==="youtube")$("#upKind").value="video"}
 document.querySelectorAll('input[name="src"]').forEach(r=>r.onchange=showSrc);
-const MAX_HTML=900*1024;
+const MAX_HTML=900*1024, MAX_PDF=15*1048576, CHUNK=600*1024;
+$("#upPdf").onchange=()=>{const f=$("#upPdf").files[0],d=$("#dropP");if(!f){d.classList.remove("has");return}d.classList.add("has");
+  $("#dropPTxt").innerHTML=`<b>${esc(f.name)}</b><br><span class="hi">${fmtSize(f.size)}${f.size>MAX_PDF?" — too large (max 15 MB)":""}</span>`;
+  if(!$("#upTitle").value)$("#upTitle").value=f.name.replace(/\.[^.]+$/,"").replace(/[_-]+/g," ")};
+function bytesToB64(u8){let s="";for(let i=0;i<u8.length;i+=32768)s+=String.fromCharCode.apply(null,u8.subarray(i,i+32768));return btoa(s)}
+function b64ToBytes(b){const s=atob(b),u=new Uint8Array(s.length);for(let i=0;i<s.length;i++)u[i]=s.charCodeAt(i);return u}
+let pdfjsP=null;
+function loadPdfJs(){if(pdfjsP)return pdfjsP;pdfjsP=new Promise((res,rej)=>{const sc=document.createElement("script");sc.src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js";
+  sc.onload=()=>{window.pdfjsLib.GlobalWorkerOptions.workerSrc="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";res(window.pdfjsLib)};sc.onerror=()=>{pdfjsP=null;rej(new Error("viewer failed to load"))};document.head.appendChild(sc)});return pdfjsP}
+async function renderPdf(bytes,box){
+  const lib=await loadPdfJs(); const pdf=await lib.getDocument({data:bytes}).promise; box.innerHTML="";
+  const w=Math.min(box.clientWidth||700,900)-16, dpr=Math.min(window.devicePixelRatio||1,2);
+  for(let n=1;n<=pdf.numPages;n++){ if(!box.isConnected)return; const pg=await pdf.getPage(n); const v1=pg.getViewport({scale:1}); const vp=pg.getViewport({scale:(w/v1.width)*dpr});
+    const c=document.createElement("canvas"); c.width=vp.width; c.height=vp.height; box.appendChild(c); await pg.render({canvasContext:c.getContext("2d"),viewport:vp}).promise; }
+}
 $("#upHtml").onchange=()=>{const f=$("#upHtml").files[0],d=$("#dropH");if(!f){d.classList.remove("has");return}d.classList.add("has");
   $("#dropHTxt").innerHTML=`<b>${esc(f.name)}</b><br><span class="hi">${fmtSize(f.size)}${f.size>MAX_HTML?" — too large (max 900 KB)":""}</span>`;
   if(!$("#upTitle").value)$("#upTitle").value=f.name.replace(/\.[^.]+$/,"").replace(/[_-]+/g," ")};
@@ -296,7 +322,7 @@ $("#upForm").onsubmit=async e=>{
   const {db,doc,collection,setDoc,serverTimestamp,storage,ref,uploadBytesResumable}=S.fb;
   const st=$("#upStatus"),btn=$("#upBtn"),bar=$("#upBar");
   const src=document.querySelector('input[name="src"]:checked').value, free=$("#upFree").checked;
-  let type,loc={},sizeBytes=0,source=src,pendingHtml=null;
+  let type,loc={},sizeBytes=0,source=src,pendingHtml=null,pendingPdf=null;
   if(src==="upload"){
     const f=upFile.files[0]; if(!f){st.textContent="Choose a file first.";return}
     const isV=f.type.startsWith("video/"),isP=f.type==="application/pdf"||/\.pdf$/i.test(f.name);
@@ -310,6 +336,10 @@ $("#upForm").onsubmit=async e=>{
         t.on("state_changed",s=>{const pc=s.bytesTransferred/s.totalBytes*100;bar.firstElementChild.style.width=pc+"%";st.textContent=`Uploading… ${pc.toFixed(0)}%`},rej,res)});
       loc={storagePath:path};
     }catch(err){st.textContent="Upload failed: "+errMsg(err);btn.disabled=false;bar.style.display="none";return}
+  }else if(src==="pdf"){
+    const f=$("#upPdf").files[0]; if(!f){st.textContent="Choose a PDF first.";return}
+    if(f.size>MAX_PDF){st.textContent="PDF is over 15 MB. Compress it (e.g. ilovepdf.com) and try again.";return}
+    type="pdf"; sizeBytes=f.size; pendingPdf=new Uint8Array(await f.arrayBuffer()); btn.disabled=true;
   }else if(src==="html"){
     const f=$("#upHtml").files[0]; if(!f){st.textContent="Choose an HTML file first.";return}
     if(f.size>MAX_HTML){st.textContent="HTML file is over 900 KB. Remove large embedded images or split it.";return}
@@ -327,11 +357,15 @@ $("#upForm").onsubmit=async e=>{
     const body={title:$("#upTitle").value.trim().slice(0,160)||"Untitled",desc:$("#upDesc").value.trim().slice(0,400),topic:$("#upTopic").value,exam:$("#upExam").value,
       type,free,source,sizeBytes,createdAt:serverTimestamp()};
     if(pendingHtml!==null) await setDoc(doc(db,"htmlnotes",mref.id),{html:pendingHtml});
+    if(pendingPdf){ const parts=Math.ceil(pendingPdf.length/CHUNK); bar.style.display="block";
+      for(let i=0;i<parts;i++){ st.textContent=`Uploading PDF… ${Math.round(i/parts*100)}%`; bar.firstElementChild.style.width=(i/parts*100)+"%";
+        await setDoc(doc(db,"pdfchunks",mref.id,"parts",String(i)),{d:bytesToB64(pendingPdf.subarray(i*CHUNK,(i+1)*CHUNK))}); }
+      await setDoc(doc(db,"pdfchunks",mref.id),{parts,size:pendingPdf.length}); loc={pdfDoc:true}; }
     if(free) Object.assign(body,loc); else await setDoc(doc(db,"premium",mref.id),loc);
     await setDoc(mref,body);
     toast(free?"Published as free preview":"Published — unlocked for paid students");
     $("#upForm").reset();$("#drop").classList.remove("has");$("#dropTxt").innerHTML=`<b>Tap to choose a file</b><br><span class="hi">MP4 video or PDF notes</span>`;
-    if(!USE_STORAGE)document.querySelector('input[name="src"][value="youtube"]').checked=true;showSrc();$("#dropH").classList.remove("has");$("#dropHTxt").innerHTML=`<b>Tap to choose an HTML file</b><br><span class="hi">Notes, tables, quizzes — up to 900 KB.</span>`;st.textContent="";
+    if(!USE_STORAGE)document.querySelector('input[name="src"][value="youtube"]').checked=true;showSrc();$("#dropP").classList.remove("has");$("#dropPTxt").innerHTML=`<b>Tap to choose a PDF</b><br><span class="hi">Up to 15 MB</span>`;$("#dropH").classList.remove("has");$("#dropHTxt").innerHTML=`<b>Tap to choose an HTML file</b><br><span class="hi">Notes, tables, quizzes — up to 900 KB.</span>`;st.textContent="";
   }catch(err){st.textContent="Could not publish: "+errMsg(err)}
   btn.disabled=false; bar.style.display="none"; bar.firstElementChild.style.width="0";
 };
