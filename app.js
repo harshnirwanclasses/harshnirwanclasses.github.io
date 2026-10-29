@@ -159,7 +159,7 @@ function renderLibrary(kind){
 function itemHTML(m,own){
   const v=m.type==="video",open=isOpen(m);
   return `<div class="item"><div class="thumb ${open?(v?"v":"p"):"l"}">${open?(v?"▶️":"📄"):"🔒"}</div><div class="meta"><b>${esc(m.title)}</b>
-  ${m.desc?`<small>${esc(m.desc)}</small><br>`:""}${m.free?`<span class="tag f">FREE</span>`:`<span class="tag o">PREMIUM</span>`}<span class="tag">${esc(m.topic)}</span>
+  ${m.desc?`<small>${esc(m.desc)}</small><br>`:""}${m.source==="html"?`<span class="tag">HTML</span>`:""}${m.free?`<span class="tag f">FREE</span>`:`<span class="tag o">PREMIUM</span>`}<span class="tag">${esc(m.topic)}</span>
   <small> ${fmtSize(m.sizeBytes)}${m.sizeBytes?" · ":""}${fmtDate(m.createdAt)}</small></div>
   <div style="display:flex;flex-direction:column;gap:6px">${open?`<button class="btn sm" data-open="${esc(m.id)}">${v?"Watch":"Open"}</button>`:`<button class="btn sm alt" data-go="unlock">🔒 Unlock</button>`}
   ${own?`<button class="btn sm danger" data-del="${esc(m.id)}">Delete</button>`:""}</div></div>`;
@@ -179,6 +179,16 @@ async function openItem(id){
   $("#mTitle").textContent=m.title;
   $("#mBody").innerHTML=`<div class="empty">⏳ Opening…</div>`; $("#modal").classList.add("on");
   try{
+    if(loc.htmlDoc){
+      const hs=await S.fb.getDoc(S.fb.doc(S.fb.db,"htmlnotes",id));
+      if(!hs.exists()){$("#mBody").innerHTML=`<div class="empty">This document isn't available.</div>`;return}
+      const htmlText=hs.data().html||"";
+      $("#mBody").innerHTML=`<iframe sandbox="allow-scripts allow-popups allow-forms" style="height:78vh;background:#fff" title="${esc(m.title)}"></iframe><div style="margin-top:10px"><button class="btn sm ghost" id="fsBtn">⛶ Full screen</button></div>`;
+      const fr=$("#mBody iframe"); fr.srcdoc=htmlText;
+      $("#fsBtn").onclick=()=>{(fr.requestFullscreen?fr.requestFullscreen():Promise.reject()).catch(()=>toast("Full screen not supported here"))};
+      if(m.desc)$("#mBody").insertAdjacentHTML("beforeend",`<p class="hi" style="margin-top:8px">${esc(m.desc)}</p>`);
+      return;
+    }
     let url=loc.url||"";
     if(loc.storagePath){ url=await S.fb.getDownloadURL(S.fb.ref(S.fb.storage,loc.storagePath)); }
     const yt=ytId(url);
@@ -199,6 +209,7 @@ function askDelete(id){
       const loc=m.free?m:S.premium[id];
       if(loc&&loc.storagePath){try{await deleteObject(ref(storage,loc.storagePath))}catch(e){}}
       if(!m.free){try{await deleteDoc(doc(db,"premium",id))}catch(e){}}
+      if(m.source==="html"){try{await deleteDoc(doc(db,"htmlnotes",id))}catch(e){}}
       await deleteDoc(doc(db,"materials",id)); toast("Deleted");
     }catch(err){toast("Could not delete: "+errMsg(err))}
   });
@@ -271,7 +282,12 @@ async function submitPayment(e){
 const upFile=$("#upFile");
 if(!USE_STORAGE){const r=document.querySelector('input[name="src"][value="upload"]');r.closest("label").style.display="none";document.querySelector('input[name="src"][value="youtube"]').checked=true;$("#srcUpload").style.display="none";$("#srcLink").style.display="block";
   $("#srcLink").insertAdjacentHTML("beforeend",`<p class="hi" style="margin-top:6px">Videos: upload to YouTube as <b>Unlisted</b> and paste the link. PDFs: choose "Other link", paste a Google Drive link (Share → Anyone with the link).</p>`)}
-document.querySelectorAll('input[name="src"]').forEach(r=>r.onchange=()=>{const v=document.querySelector('input[name="src"]:checked').value;$("#srcUpload").style.display=v==="upload"?"block":"none";$("#srcLink").style.display=v==="upload"?"none":"block";if(v==="youtube")$("#upKind").value="video"});
+function showSrc(){const v=document.querySelector('input[name="src"]:checked').value;$("#srcUpload").style.display=v==="upload"?"block":"none";$("#srcHtml").style.display=v==="html"?"block":"none";$("#srcLink").style.display=(v==="youtube"||v==="link")?"block":"none";if(v==="youtube")$("#upKind").value="video"}
+document.querySelectorAll('input[name="src"]').forEach(r=>r.onchange=showSrc);
+const MAX_HTML=900*1024;
+$("#upHtml").onchange=()=>{const f=$("#upHtml").files[0],d=$("#dropH");if(!f){d.classList.remove("has");return}d.classList.add("has");
+  $("#dropHTxt").innerHTML=`<b>${esc(f.name)}</b><br><span class="hi">${fmtSize(f.size)}${f.size>MAX_HTML?" — too large (max 900 KB)":""}</span>`;
+  if(!$("#upTitle").value)$("#upTitle").value=f.name.replace(/\.[^.]+$/,"").replace(/[_-]+/g," ")};
 upFile.onchange=()=>{const f=upFile.files[0],d=$("#drop");if(!f){d.classList.remove("has");return}d.classList.add("has");
   $("#dropTxt").innerHTML=`<b>${esc(f.name)}</b><br><span class="hi">${fmtSize(f.size)}${f.size>MAX_UPLOAD_MB*1048576?` — too large (max ${MAX_UPLOAD_MB} MB)`:""}</span>`;
   if(!$("#upTitle").value)$("#upTitle").value=f.name.replace(/\.[^.]+$/,"").replace(/[_-]+/g," ")};
@@ -280,7 +296,7 @@ $("#upForm").onsubmit=async e=>{
   const {db,doc,collection,setDoc,serverTimestamp,storage,ref,uploadBytesResumable}=S.fb;
   const st=$("#upStatus"),btn=$("#upBtn"),bar=$("#upBar");
   const src=document.querySelector('input[name="src"]:checked').value, free=$("#upFree").checked;
-  let type,loc={},sizeBytes=0,source=src;
+  let type,loc={},sizeBytes=0,source=src,pendingHtml=null;
   if(src==="upload"){
     const f=upFile.files[0]; if(!f){st.textContent="Choose a file first.";return}
     const isV=f.type.startsWith("video/"),isP=f.type==="application/pdf"||/\.pdf$/i.test(f.name);
@@ -294,6 +310,12 @@ $("#upForm").onsubmit=async e=>{
         t.on("state_changed",s=>{const pc=s.bytesTransferred/s.totalBytes*100;bar.firstElementChild.style.width=pc+"%";st.textContent=`Uploading… ${pc.toFixed(0)}%`},rej,res)});
       loc={storagePath:path};
     }catch(err){st.textContent="Upload failed: "+errMsg(err);btn.disabled=false;bar.style.display="none";return}
+  }else if(src==="html"){
+    const f=$("#upHtml").files[0]; if(!f){st.textContent="Choose an HTML file first.";return}
+    if(f.size>MAX_HTML){st.textContent="HTML file is over 900 KB. Remove large embedded images or split it.";return}
+    const html=await f.text();
+    if(new Blob([html]).size>MAX_HTML){st.textContent="HTML file is over 900 KB.";return}
+    type="pdf"; sizeBytes=f.size; loc={htmlDoc:true}; pendingHtml=html; btn.disabled=true;
   }else{
     const u=$("#upUrl").value.trim();
     if(!safeUrl(u)){st.textContent="Paste a full https:// link.";return}
@@ -304,11 +326,12 @@ $("#upForm").onsubmit=async e=>{
     const mref=doc(collection(db,"materials"));
     const body={title:$("#upTitle").value.trim().slice(0,160)||"Untitled",desc:$("#upDesc").value.trim().slice(0,400),topic:$("#upTopic").value,exam:$("#upExam").value,
       type,free,source,sizeBytes,createdAt:serverTimestamp()};
+    if(pendingHtml!==null) await setDoc(doc(db,"htmlnotes",mref.id),{html:pendingHtml});
     if(free) Object.assign(body,loc); else await setDoc(doc(db,"premium",mref.id),loc);
     await setDoc(mref,body);
     toast(free?"Published as free preview":"Published — unlocked for paid students");
     $("#upForm").reset();$("#drop").classList.remove("has");$("#dropTxt").innerHTML=`<b>Tap to choose a file</b><br><span class="hi">MP4 video or PDF notes</span>`;
-    if(USE_STORAGE){$("#srcUpload").style.display="block";$("#srcLink").style.display="none"}else{document.querySelector('input[name="src"][value="youtube"]').checked=true}st.textContent="";
+    if(!USE_STORAGE)document.querySelector('input[name="src"][value="youtube"]').checked=true;showSrc();$("#dropH").classList.remove("has");$("#dropHTxt").innerHTML=`<b>Tap to choose an HTML file</b><br><span class="hi">Notes, tables, quizzes — up to 900 KB.</span>`;st.textContent="";
   }catch(err){st.textContent="Could not publish: "+errMsg(err)}
   btn.disabled=false; bar.style.display="none"; bar.firstElementChild.style.width="0";
 };
@@ -514,7 +537,7 @@ async function initFirebase(){
   const F=S.fb;
   F.getRedirectResult(F.auth).catch(()=>{});
   // public data
-  F.onSnapshot(F.query(F.collection(F.db,"materials"),F.orderBy("createdAt","desc")),s=>{S.materials=s.docs.map(d=>({id:d.id,...d.data()}));S.dbReady=true;renderAll()},err=>{console.error(err);S.dbReady=true;renderAll()});
+  F.onSnapshot(F.query(F.collection(F.db,"materials"),F.orderBy("createdAt","desc")),s=>{S.materials=s.docs.map(d=>({id:d.id,...d.data()})).filter(m=>!m.hidden);S.dbReady=true;renderAll()},err=>{console.error(err);S.dbReady=true;renderAll()});
   F.onSnapshot(F.query(F.collection(F.db,"notices"),F.orderBy("createdAt","desc"),F.limit(10)),s=>{S.notices=s.docs.map(d=>({id:d.id,...d.data()}));renderNotices()},()=>{});
   F.onSnapshot(F.doc(F.db,"config","pay"),s=>{S.payCfg=s.exists()?s.data():{};fillPayForm();renderPremium();if($("#v-unlock").classList.contains("on"))renderUnlock()},()=>{});
   F.onSnapshot(F.query(F.collection(F.db,"questions"),F.orderBy("createdAt","desc")),s=>{S.questions=s.docs.map(d=>({id:d.id,...d.data()}));renderPracticeChips();renderPractice();renderQList()},()=>{});

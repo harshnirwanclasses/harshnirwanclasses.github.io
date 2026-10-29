@@ -213,12 +213,20 @@ footer{max-width:900px;margin:0 auto;padding:4px 16px 24px;font-size:.75rem;colo
             <label class="chk" style="border:0;padding:4px 0"><input type="radio" name="src" value="upload" checked><span>Upload file</span></label>
             <label class="chk" style="border:0;padding:4px 0"><input type="radio" name="src" value="youtube"><span>YouTube link</span></label>
             <label class="chk" style="border:0;padding:4px 0"><input type="radio" name="src" value="link"><span>Other link</span></label>
+            <label class="chk" style="border:0;padding:4px 0"><input type="radio" name="src" value="html"><span>HTML file</span></label>
           </div>
           <div id="srcUpload">
             <label class="drop" id="drop">
               <input type="file" id="upFile" accept="video/*,application/pdf" hidden>
               <div style="font-size:1.8rem">⬆️</div>
               <div id="dropTxt"><b>Tap to choose a file</b><br><span class="hi">MP4 video or PDF notes</span></div>
+            </label>
+          </div>
+          <div id="srcHtml" style="display:none">
+            <label class="drop" id="dropH">
+              <input type="file" id="upHtml" accept=".html,.htm,text/html" hidden>
+              <div style="font-size:1.8rem">📝</div>
+              <div id="dropHTxt"><b>Tap to choose an HTML file</b><br><span class="hi">Notes, tables, quizzes — up to 900 KB. Images must be inside the file or online links.</span></div>
             </label>
           </div>
           <div id="srcLink" style="display:none">
