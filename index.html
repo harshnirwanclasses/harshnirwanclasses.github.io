@@ -157,6 +157,12 @@ nav button.on svg.i{filter:drop-shadow(0 0 6px rgba(255,106,26,.7))}
 .coach li{display:flex;gap:8px;font-size:.8rem;line-height:1.35;color:#d7e6dc}
 .coach li svg{flex:none;width:16px;height:16px;stroke:var(--orange2);fill:none;stroke-width:2;margin-top:1px}
 @media(max-width:420px){.coach{flex-direction:column}.coach .pic{width:100%;max-width:none;min-height:0;aspect-ratio:1/1;background-position:center 0%}.coach .pic::after{background:linear-gradient(180deg,transparent 60%,var(--card) 100%)}.coach .body{padding:0 16px 16px}}
+.vac{border-left:4px solid var(--orange)}
+.vac.closed{border-left-color:#3a4a41;opacity:.75}
+.vac h4{font-size:1rem;font-weight:700;line-height:1.3}
+.vdates{display:flex;gap:14px;flex-wrap:wrap;margin:8px 0;font-size:.8rem;color:#cfe0d6}
+.vdates b{color:var(--ink)}
+.pill.o{background:var(--peach);color:var(--peachink)}.pill.r{background:rgba(255,90,90,.14);color:#ff9a9a}.pill.x{background:rgba(255,255,255,.07);color:var(--muted)}
 .seo{font-size:.84rem;color:var(--muted)}
 .seo h3{font-size:.95rem;color:var(--ink);margin:8px 0 4px}
 footer{max-width:900px;margin:0 auto;padding:4px 16px 24px;font-size:.75rem;color:var(--muted);text-align:center}
@@ -254,6 +260,8 @@ footer{max-width:900px;margin:0 auto;padding:4px 16px 24px;font-size:.75rem;colo
         </ul>
       </div>
     </div>
+    <div class="spread"><h2>Upcoming vacancies</h2><button class="btn sm ghost" data-go="vacancy">See all →</button></div><p class="hi sub">आने वाली भर्तियाँ — official notifications</p>
+    <div id="vacHome"></div>
     <h2>Notice board</h2><p class="hi sub">सूचना पट्ट</p>
     <div id="noticeList"></div>
     <div class="card owneronly">
@@ -269,6 +277,7 @@ footer{max-width:900px;margin:0 auto;padding:4px 16px 24px;font-size:.75rem;colo
       <button class="tile" data-go="mock"><div class="ic g"><svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2.5M10 2h4M12 2v3"/></svg></div><b>Mock test</b><span>Timed, with marking</span></button>
       <button class="tile" data-go="syllabus"><div class="ic"><svg class="i" viewBox="0 0 24 24"><path d="M4 19V5a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0-2 2zm0 0a2 2 0 0 0 2 2h13"/><path d="M8 7h7"/></svg></div><b>Syllabus</b><span>Track topics</span></button>
       <button class="tile" data-go="planner"><div class="ic g"><svg class="i" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4M8 15h3"/></svg></div><b>Daily planner</b><span>Today's targets</span></button>
+      <button class="tile" data-go="vacancy"><div class="ic"><svg class="i" viewBox="0 0 24 24"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.9 1.9 0 0 0 3.4 0"/></svg></div><b>Vacancies</b><span>Official notifications</span></button>
     </div>
     <div class="card seo" style="margin-top:14px">
       <h3>About Harsh Nirwan Classes</h3>
@@ -276,6 +285,28 @@ footer{max-width:900px;margin:0 auto;padding:4px 16px 24px;font-size:.75rem;colo
       <h3>Topics covered</h3>
       <p>History & foundations of PE, Olympic movement, anatomy & physiology, exercise physiology, kinesiology & biomechanics, sports training, sports psychology, test & measurement, health education & nutrition, sports injuries & first aid, yoga, rules of games and sports, organisation & administration, and teaching methods.</p>
     </div>
+  </section>
+
+  <section class="view" id="v-vacancy">
+    <h2>Upcoming vacancies</h2><p class="hi sub">आने वाली भर्तियाँ — official notifications & last dates</p>
+    <div class="card owneronly">
+      <b>Post a vacancy</b><div class="hi">Visible to everyone, free.</div>
+      <form id="vacForm">
+        <label class="f" for="vTitle">Vacancy name</label><input class="in" id="vTitle" required maxlength="160" placeholder="e.g. KVS PRT/TGT/PGT Recruitment 2026 – PET posts">
+        <label class="f" for="vOrg">Organisation / exam (optional)</label><input class="in" id="vOrg" maxlength="80" placeholder="e.g. Kendriya Vidyalaya Sangathan">
+        <div class="row">
+          <div style="flex:1;min-width:140px"><label class="f" for="vStart">Notification / start date</label><input class="in" id="vStart" type="date"></div>
+          <div style="flex:1;min-width:140px"><label class="f" for="vLast">Last date to apply</label><input class="in" id="vLast" type="date"></div>
+        </div>
+        <label class="f" for="vPosts">Posts / details (optional)</label><input class="in" id="vPosts" maxlength="160" placeholder="e.g. 120 posts · PET (TGT) · Age 30 yrs">
+        <label class="f" for="vLink">Official website link (optional)</label><input class="in" id="vLink" maxlength="300" placeholder="https://…">
+        <label class="f">Official PDF (optional)</label>
+        <label class="drop" id="dropV"><input type="file" id="vPdf" accept="application/pdf,.pdf" hidden><div style="font-size:1.6rem">📄</div><div id="dropVTxt"><b>Tap to choose the official PDF</b><br><span class="hi">Up to 15 MB</span></div></label>
+        <div class="bar" id="vBar" style="display:none;margin:8px 0"><i style="width:0"></i></div>
+        <div class="row" style="margin-top:12px"><button class="btn alt" id="vBtn">Post vacancy</button><span class="hi" id="vStatus"></span></div>
+      </form>
+    </div>
+    <div id="vacList"></div>
   </section>
 
   <section class="view" id="v-videos">

@@ -425,7 +425,73 @@ function renderQList(){
 document.addEventListener("click",e=>{const b=e.target.closest("[data-dq]");if(b&&S.isOwner)askConfirm("Delete this question?","Delete",async()=>{try{await S.fb.deleteDoc(S.fb.doc(S.fb.db,"questions",b.dataset.dq))}catch(err){toast("Failed: "+errMsg(err))}})});
 
 /* =================== render all =================== */
-function renderAll(){renderLibrary("videos");renderLibrary("pdfs");renderMine();renderStats();renderNotices();renderPremium();setRole();renderAcct();if($("#v-unlock").classList.contains("on"))renderUnlock()}
+/* =================== vacancies =================== */
+S.vacancies=[];
+const dayMs=864e5;
+const todayMs=()=>new Date().setHours(0,0,0,0);
+const fmtD=d=>d?new Date(d+"T00:00:00").toLocaleDateString("en-IN",{day:"numeric",month:"short",year:"numeric"}):"";
+function vacSorted(){const t=todayMs();const open=S.vacancies.filter(v=>!v.lastDate||new Date(v.lastDate+"T00:00:00")>=t).sort((a,b)=>(a.lastDate||"9999").localeCompare(b.lastDate||"9999"));
+  const closed=S.vacancies.filter(v=>v.lastDate&&new Date(v.lastDate+"T00:00:00")<t).sort((a,b)=>b.lastDate.localeCompare(a.lastDate));return{open,closed}}
+function vacCard(v){
+  const t=todayMs(),last=v.lastDate?new Date(v.lastDate+"T00:00:00").getTime():null,days=last!==null?Math.round((last-t)/dayMs):null;
+  const start=v.startDate?new Date(v.startDate+"T00:00:00").getTime():null;
+  let pill="";
+  if(days!==null&&days<0)pill=`<span class="pill x">Closed</span>`;
+  else if(start&&start>t)pill=`<span class="pill">Starts ${fmtD(v.startDate)}</span>`;
+  else if(days===0)pill=`<span class="pill r">Last day today!</span>`;
+  else if(days!==null&&days<=7)pill=`<span class="pill r">${days} day${days>1?"s":""} left</span>`;
+  else if(days!==null)pill=`<span class="pill o">${days} days left</span>`;
+  else pill=`<span class="pill">Open</span>`;
+  return `<div class="card vac ${days!==null&&days<0?"closed":""}"><div class="spread" style="align-items:flex-start"><h4>${esc(v.title)}</h4>${pill}</div>
+   ${v.org?`<div class="hi">${esc(v.org)}</div>`:""}
+   <div class="vdates">${v.startDate?`<span>📅 Starts: <b>${fmtD(v.startDate)}</b></span>`:""}${v.lastDate?`<span>⏰ Last date: <b>${fmtD(v.lastDate)}</b></span>`:""}</div>
+   ${v.posts?`<div style="font-size:.85rem;margin-bottom:8px">${esc(v.posts)}</div>`:""}
+   <div class="row">${v.parts?`<button class="btn sm alt" data-vpdf="${esc(v.id)}">📄 Official PDF</button>`:""}${safeUrl(v.link)?`<a class="btn sm ghost" href="${esc(v.link)}" target="_blank" rel="noopener">Official site ↗</a>`:""}${S.isOwner?`<button class="btn sm danger" data-vdel="${esc(v.id)}">Delete</button>`:""}</div></div>`;
+}
+function renderVacancies(){
+  const {open,closed}=vacSorted();
+  $("#vacHome").innerHTML=open.length?open.slice(0,3).map(vacCard).join(""):`<div class="card hi" style="text-align:center">No open vacancies right now — check back soon.</div>`;
+  $("#vacList").innerHTML=(open.length||closed.length)?open.map(vacCard).join("")+(closed.length?`<h2 style="margin-top:16px">Closed</h2>`+closed.slice(0,20).map(vacCard).join(""):"")
+    :`<div class="empty"><div class="big">🔔</div>No vacancies posted yet.</div>`;
+}
+async function uploadPdfParts(col,id,bytes,onProg){const {db,doc,setDoc}=S.fb;const parts=Math.ceil(bytes.length/CHUNK);
+  for(let i=0;i<parts;i++){onProg&&onProg(i/parts);await setDoc(doc(db,col,id,"parts",String(i)),{d:bytesToB64(bytes.subarray(i*CHUNK,(i+1)*CHUNK))})}
+  return parts}
+async function loadPdfParts(col,id,n,onProg){const {db,doc,getDoc}=S.fb;let got=0;
+  const parts=await Promise.all(Array.from({length:n},(_,i)=>getDoc(doc(db,col,id,"parts",String(i))).then(s=>{got++;onProg&&onProg(got,n);return b64ToBytes(s.data().d)})));
+  const out=new Uint8Array(parts.reduce((t,p)=>t+p.length,0));let o=0;parts.forEach(p=>{out.set(p,o);o+=p.length});return out}
+$("#vPdf").onchange=()=>{const f=$("#vPdf").files[0],d=$("#dropV");if(!f){d.classList.remove("has");return}d.classList.add("has");
+  $("#dropVTxt").innerHTML=`<b>${esc(f.name)}</b><br><span class="hi">${fmtSize(f.size)}${f.size>MAX_PDF?" — too large (max 15 MB)":""}</span>`};
+$("#vacForm").onsubmit=async e=>{
+  e.preventDefault(); if(!S.isOwner||!S.fb) return; const {db,doc,collection,setDoc,serverTimestamp}=S.fb;
+  const st=$("#vStatus"),btn=$("#vBtn"),bar=$("#vBar"),f=$("#vPdf").files[0],link=$("#vLink").value.trim();
+  if(link&&!safeUrl(link)){st.textContent="Link must start with https://";return}
+  if(f&&f.size>MAX_PDF){st.textContent="PDF is over 15 MB. Compress it first (ilovepdf.com).";return}
+  btn.disabled=true; st.textContent="Posting…";
+  try{
+    const ref=doc(collection(db,"vacancies")); let parts=0;
+    if(f){bar.style.display="block";parts=await uploadPdfParts("vacpdf",ref.id,new Uint8Array(await f.arrayBuffer()),x=>{bar.firstElementChild.style.width=(x*100)+"%";st.textContent=`Uploading PDF… ${Math.round(x*100)}%`})}
+    await setDoc(ref,{title:$("#vTitle").value.trim().slice(0,160),org:$("#vOrg").value.trim().slice(0,80),startDate:$("#vStart").value||"",lastDate:$("#vLast").value||"",
+      posts:$("#vPosts").value.trim().slice(0,160),link:link.slice(0,300),parts,createdAt:serverTimestamp()});
+    $("#vacForm").reset();$("#dropV").classList.remove("has");$("#dropVTxt").innerHTML=`<b>Tap to choose the official PDF</b><br><span class="hi">Up to 15 MB</span>`;st.textContent="";toast("Vacancy posted");
+  }catch(err){st.textContent="Could not post: "+errMsg(err)}
+  btn.disabled=false;bar.style.display="none";bar.firstElementChild.style.width="0";
+};
+document.addEventListener("click",async e=>{
+  const b=e.target.closest("[data-vpdf]");
+  if(b){const v=S.vacancies.find(x=>x.id===b.dataset.vpdf);if(!v||!S.fb)return;
+    $("#mTitle").textContent=v.title;$("#mBody").innerHTML=`<div class="empty">⏳ Loading PDF…</div>`;$("#modal").classList.add("on");
+    try{const bytes=await loadPdfParts("vacpdf",v.id,v.parts,(g,n)=>{const el=$("#mBody .empty");if(el)el.textContent=`⏳ Loading PDF… ${g}/${n}`});
+      const u=URL.createObjectURL(new Blob([bytes],{type:"application/pdf"}));
+      $("#mBody").innerHTML=`<div class="pdfv" id="pdfBox"><div class="empty">⏳ Opening…</div></div><div class="row" style="margin-top:10px"><a class="btn sm ghost" href="${u}" download="${esc((v.title||"vacancy").replace(/[^\w\- ]+/g,""))}.pdf">⬇ Download PDF</a>${safeUrl(v.link)?`<a class="btn sm ghost" href="${esc(v.link)}" target="_blank" rel="noopener">Official site ↗</a>`:""}</div>`;
+      await renderPdf(bytes.slice(),$("#pdfBox"));
+    }catch(err){$("#mBody").innerHTML=`<div class="empty">Couldn't open the PDF (${esc(errMsg(err))}).</div>`}}
+  const d=e.target.closest("[data-vdel]");
+  if(d&&S.isOwner){const v=S.vacancies.find(x=>x.id===d.dataset.vdel);if(!v)return;
+    askConfirm(`Delete "${v.title}"?`,"Delete",async()=>{const {db,doc,deleteDoc}=S.fb;try{for(let i=0;i<(v.parts||0);i++)await deleteDoc(doc(db,"vacpdf",v.id,"parts",String(i)));await deleteDoc(doc(db,"vacancies",v.id));toast("Deleted")}catch(err){toast("Failed: "+errMsg(err))}})}
+});
+
+function renderAll(){renderVacancies();renderLibrary("videos");renderLibrary("pdfs");renderMine();renderStats();renderNotices();renderPremium();setRole();renderAcct();if($("#v-unlock").classList.contains("on"))renderUnlock()}
 
 /* =================== practice =================== */
 const QB=()=>BASE_QB.concat(S.questions.filter(q=>Array.isArray(q.options)&&q.options.length===4).map(q=>[q.topic,q.q,q.options,q.ans,q.exp||""]));
@@ -572,6 +638,7 @@ async function initFirebase(){
   F.getRedirectResult(F.auth).catch(()=>{});
   // public data
   F.onSnapshot(F.query(F.collection(F.db,"materials"),F.orderBy("createdAt","desc")),s=>{S.materials=s.docs.map(d=>({id:d.id,...d.data()})).filter(m=>!m.hidden);S.dbReady=true;renderAll()},err=>{console.error(err);S.dbReady=true;renderAll()});
+  F.onSnapshot(F.collection(F.db,"vacancies"),s=>{S.vacancies=s.docs.map(d=>({id:d.id,...d.data()}));renderVacancies()},()=>{});
   F.onSnapshot(F.query(F.collection(F.db,"notices"),F.orderBy("createdAt","desc"),F.limit(10)),s=>{S.notices=s.docs.map(d=>({id:d.id,...d.data()}));renderNotices()},()=>{});
   F.onSnapshot(F.doc(F.db,"config","pay"),s=>{S.payCfg=s.exists()?s.data():{};fillPayForm();renderPremium();if($("#v-unlock").classList.contains("on"))renderUnlock()},()=>{});
   F.onSnapshot(F.query(F.collection(F.db,"questions"),F.orderBy("createdAt","desc")),s=>{S.questions=s.docs.map(d=>({id:d.id,...d.data()}));renderPracticeChips();renderPractice();renderQList()},()=>{});
