@@ -175,6 +175,26 @@ nav button.on svg.i{filter:drop-shadow(0 0 6px rgba(255,106,26,.7))}
 .cchk label{display:flex;align-items:center;gap:6px;background:#0a1610;border:1px solid var(--line);border-radius:99px;padding:6px 12px;font-size:.82rem;cursor:pointer}
 .cchk input{accent-color:var(--orange)}
 .tag.c{background:rgba(255,194,74,.12);color:var(--gold)}
+.tbar{position:sticky;top:0;z-index:5;background:rgba(6,15,10,.95);backdrop-filter:blur(8px);border:1px solid var(--line);border-radius:14px;padding:10px 12px;margin-bottom:12px}
+.pal{display:grid;grid-template-columns:repeat(auto-fill,minmax(38px,1fr));gap:6px;margin-top:10px}
+.pal button{height:38px;border-radius:10px;background:#1a2a21;color:var(--muted);font-weight:700;font-size:.8rem;border:1.5px solid transparent}
+.pal button.v{background:rgba(255,90,90,.16);color:#ff9a9a}
+.pal button.a{background:rgba(34,197,94,.22);color:#86efac}
+.pal button.m{background:rgba(168,85,247,.25);color:#d8b4fe}
+.pal button.am{background:rgba(168,85,247,.25);color:#86efac;box-shadow:inset 0 -3px 0 #22c55e}
+.pal button.cur{border-color:var(--orange)}
+.legend{display:flex;flex-wrap:wrap;gap:10px;font-size:.7rem;color:var(--muted);margin-top:8px}
+.legend i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:4px;vertical-align:-1px}
+.rstats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:12px 0}
+.rstats div{background:#0a1610;border:1px solid var(--line);border-radius:12px;padding:10px;text-align:center}
+.rstats b{display:block;font-size:1.2rem;color:var(--gold)}
+.rstats span{font-size:.7rem;color:var(--muted)}
+.lb{width:100%;border-collapse:collapse;font-size:.84rem}
+.lb td,.lb th{padding:8px 6px;border-bottom:1px solid var(--line);text-align:left}
+.lb tr.me td{background:rgba(255,106,26,.12)}
+.bankq{display:flex;gap:8px;align-items:flex-start;padding:8px 0;border-bottom:1px solid var(--line);font-size:.84rem}
+.bankq input{margin-top:3px;accent-color:var(--orange);flex:none;width:18px;height:18px}
+body.intest header,body.intest footer{display:none}
 .seo{font-size:.84rem;color:var(--muted)}
 .seo h3{font-size:.95rem;color:var(--ink);margin:8px 0 4px}
 footer{max-width:900px;margin:0 auto;padding:4px 16px 24px;font-size:.75rem;color:var(--muted);text-align:center}
@@ -286,7 +306,7 @@ footer{max-width:900px;margin:0 auto;padding:4px 16px 24px;font-size:.75rem;colo
       <button class="tile" data-go="videos"><div class="ic"><svg class="i" viewBox="0 0 24 24"><rect x="2" y="5" width="20" height="14" rx="3"/><path d="m10 9 5 3-5 3z"/></svg></div><b>Video lectures</b><span>Watch classes</span></button>
       <button class="tile" data-go="pdfs"><div class="ic g"><svg class="i" viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M9 13h6M9 17h6"/></svg></div><b>PDF notes</b><span>Read & revise</span></button>
       <button class="tile" data-go="practice"><div class="ic"><svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.5"/></svg></div><b>Practice</b><span>MCQs with answers</span></button>
-      <button class="tile" data-go="mock"><div class="ic g"><svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2.5M10 2h4M12 2v3"/></svg></div><b>Mock test</b><span>Timed, with marking</span></button>
+      <button class="tile" data-go="tests"><div class="ic g"><svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2.5M10 2h4M12 2v3"/></svg></div><b>Test series</b><span>Full tests with rank</span></button>
       <button class="tile" data-go="syllabus"><div class="ic"><svg class="i" viewBox="0 0 24 24"><path d="M4 19V5a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0-2 2zm0 0a2 2 0 0 0 2 2h13"/><path d="M8 7h7"/></svg></div><b>Syllabus</b><span>Track topics</span></button>
       <button class="tile" data-go="planner"><div class="ic g"><svg class="i" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4M8 15h3"/></svg></div><b>Daily planner</b><span>Today's targets</span></button>
       <button class="tile" data-go="vacancy"><div class="ic"><svg class="i" viewBox="0 0 24 24"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.9 1.9 0 0 0 3.4 0"/></svg></div><b>Vacancies</b><span>Official notifications</span></button>
@@ -346,6 +366,7 @@ footer{max-width:900px;margin:0 auto;padding:4px 16px 24px;font-size:.75rem;colo
       <button data-pane="pCourses">Courses</button>
       <button data-pane="pReq">Payments <span id="reqCount"></span></button>
       <button data-pane="pStu">Students</button>
+      <button data-pane="pTests">Tests</button>
       <button data-pane="pQ">Questions</button>
       <button data-pane="pPay">Settings</button>
     </div>
@@ -438,6 +459,31 @@ footer{max-width:900px;margin:0 auto;padding:4px 16px 24px;font-size:.75rem;colo
       <div id="stuList"></div>
     </div>
 
+    <div class="pane" id="pTests">
+      <div class="card">
+        <b>Create a test</b><div class="hi">Pick questions from your question bank (built-in + your own). Add more questions in the Questions tab.</div>
+        <form id="tForm">
+          <label class="f" for="tTitle">Test name</label><input class="in" id="tTitle" required maxlength="120" placeholder="e.g. KVS PET Full Mock Test 1">
+          <div class="row">
+            <div style="flex:1;min-width:140px"><label class="f" for="tCourse">Who can take it</label><select class="in" id="tCourse"></select></div>
+            <div style="flex:1;min-width:110px"><label class="f" for="tDur">Time (minutes)</label><input class="in" id="tDur" type="number" min="1" max="300" value="60" required></div>
+          </div>
+          <div class="row">
+            <div style="flex:1;min-width:110px"><label class="f" for="tMarks">Marks per question</label><input class="in" id="tMarks" type="number" min="0.25" step="0.25" value="1" required></div>
+            <div style="flex:1;min-width:140px"><label class="f" for="tNeg">Negative marking</label><select class="in" id="tNeg"><option value="0">None</option><option value="0.25" selected>−¼ of marks</option><option value="0.3333">−⅓ of marks</option><option value="0.5">−½ of marks</option></select></div>
+          </div>
+          <label class="f" for="tStart">Live test start (optional)</label><input class="in" id="tStart" type="datetime-local">
+          <label class="f">Questions — <span id="tSelCount">0 selected</span></label>
+          <div class="row" style="margin-bottom:6px"><select class="in" id="tTopic" style="flex:1;min-width:150px"></select></div>
+          <div class="row" style="margin-bottom:8px"><input class="in" id="tRandN" type="number" min="1" value="25" style="width:90px"><button class="btn sm ghost" type="button" id="tRand">Pick random</button><button class="btn sm ghost" type="button" id="tAllShown">Select all shown</button><button class="btn sm danger" type="button" id="tClear">Clear</button></div>
+          <div id="tBank" style="max-height:340px;overflow:auto;border:1px solid var(--line);border-radius:12px;padding:4px 10px;background:#0a1610"></div>
+          <div class="row" style="margin-top:12px"><button class="btn alt" id="tBtn">Create test</button><span class="hi" id="tStatus"></span></div>
+        </form>
+      </div>
+      <h2>Your tests</h2>
+      <div id="tList"></div>
+    </div>
+
     <div class="pane" id="pQ">
       <div class="card">
         <b>Add an MCQ</b><div class="hi">It appears in Practice and Mock tests for everyone.</div>
@@ -481,6 +527,16 @@ footer{max-width:900px;margin:0 auto;padding:4px 16px 24px;font-size:.75rem;colo
     <div class="chips" id="cPractice"></div><div class="card" id="pCard"></div>
   </section>
 
+  <section class="view" id="v-tests">
+    <h2>Test series</h2><p class="hi sub">टेस्ट सीरीज़ — real exam pattern, rank & analysis</p>
+    <div id="testList"></div>
+    <div class="card"><div class="spread"><div><b>Quick practice mock</b><div class="hi">Random questions, instant practice — not ranked</div></div><button class="btn sm ghost" data-go="mock">Start</button></div></div>
+  </section>
+
+  <section class="view" id="v-test">
+    <div id="testArea"></div>
+  </section>
+
   <section class="view" id="v-mock">
     <h2>Mock test</h2><p class="hi sub">मॉक टेस्ट</p><div id="mockArea"></div>
   </section>
@@ -507,7 +563,7 @@ footer{max-width:900px;margin:0 auto;padding:4px 16px 24px;font-size:.75rem;colo
   <button data-go="videos"><svg class="i" viewBox="0 0 24 24"><rect x="2" y="5" width="20" height="14" rx="3"/><path d="m10 9 5 3-5 3z"/></svg>Videos</button>
   <button data-go="pdfs"><svg class="i" viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M9 13h6M9 17h6"/></svg>Notes</button>
   <button data-go="practice"><svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.5"/></svg>Practice</button>
-  <button data-go="mock"><svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2.5M10 2h4M12 2v3"/></svg>Mock</button>
+  <button data-go="tests"><svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2.5M10 2h4M12 2v3"/></svg>Tests</button>
   <button data-go="owner" id="navOwner" style="display:none"><svg class="i" viewBox="0 0 24 24"><path d="M3 8l4 4 5-7 5 7 4-4-2 11H5z"/></svg>Owner</button>
 </nav>
 

@@ -82,9 +82,11 @@ const safeUrl = u => /^https:\/\//i.test(String(u||"")) ? u : "";
 /* =================== navigation =================== */
 function go(v){
   document.querySelectorAll(".view").forEach(s=>s.classList.toggle("on", s.id==="v-"+v));
+  document.body.classList.toggle("intest", v==="test");
   document.querySelectorAll("nav button").forEach(b=>b.classList.toggle("on", b.dataset.go===v));
   window.scrollTo(0,0);
   if(v==="mock" && !mock.running && !mock.done) renderMockStart();
+  if(v==="tests"){if(T&&!T.result&&T.endAt>Date.now()){/* resume banner */}renderTests()}
   if(v==="unlock") renderUnlock();
 }
 document.addEventListener("click", e => { const b=e.target.closest("[data-go]"); if(b){ e.preventDefault(); go(b.dataset.go); } });
@@ -640,14 +642,152 @@ document.addEventListener("click",async e=>{
     askConfirm(`Delete "${v.title}"?`,"Delete",async()=>{const {db,doc,deleteDoc}=S.fb;try{for(let i=0;i<(v.parts||0);i++)await deleteDoc(doc(db,"vacpdf",v.id,"parts",String(i)));await deleteDoc(doc(db,"vacancies",v.id));toast("Deleted")}catch(err){toast("Failed: "+errMsg(err))}})}
 });
 
-function renderAll(){renderVacancies();if(S.isOwner)renderCourseAdmin();renderLibrary("videos");renderLibrary("pdfs");renderMine();renderStats();renderNotices();renderPremium();setRole();renderAcct();if($("#v-unlock").classList.contains("on"))renderUnlock()}
+
+/* =================== TEST SERIES =================== */
+S.tests=[]; S.myAttempts={};
+const tsel=new Set();
+function bankItems(){return [...BASE_QB.map((q,i)=>({key:"b"+i,q})),...BANK.map((q,i)=>({key:"k"+i,q})),...S.questions.filter(x=>Array.isArray(x.options)&&x.options.length===4).map(x=>({key:"q"+x.id,q:[x.topic,x.q,x.options,x.ans,x.exp||""]}))]}
+function renderTestCourseSel(){const el=$("#tCourse");if(!el)return;const v=el.value;
+  el.innerHTML=`<option value="free">Free — everyone</option>`+courseList().map(c=>`<option value="${esc(c.id)}">${esc(c.name)}${c.all?"":" students"}</option>`).join("");if(v)el.value=v}
+function renderTestBank(){
+  const box=$("#tBank");if(!box)return;const ts=qbTopics(),cur=$("#tTopic").value||"All";
+  $("#tTopic").innerHTML=`<option value="All">All topics</option>`+ts.map(t=>`<option ${t===cur?"selected":""}>${esc(t)}</option>`).join("");
+  const items=bankItems().filter(it=>cur==="All"||it.q[0]===cur);
+  box.innerHTML=items.slice(0,400).map(it=>`<label class="bankq"><input type="checkbox" data-tq="${it.key}" ${tsel.has(it.key)?"checked":""}><span>${esc(it.q[1])}<br><small class="hi">${esc(it.q[0])} · ✔ ${esc(it.q[2][it.q[3]])}</small></span></label>`).join("")+(items.length>400?`<div class="hi" style="padding:8px 0">Showing first 400 — pick a topic to see the rest, or use "Pick random".</div>`:"")||`<div class="hi" style="padding:10px 0">No questions.</div>`;
+  $("#tSelCount").textContent=`${tsel.size} selected`;
+}
+$("#tTopic").onchange=renderTestBank;
+$("#tBank").addEventListener("change",e=>{const c=e.target.closest("[data-tq]");if(!c)return;c.checked?tsel.add(c.dataset.tq):tsel.delete(c.dataset.tq);$("#tSelCount").textContent=`${tsel.size} selected`});
+$("#tRand").onclick=()=>{const cur=$("#tTopic").value||"All";const pool=bankItems().filter(it=>(cur==="All"||it.q[0]===cur)&&!tsel.has(it.key));shuffle(pool).slice(0,Math.max(1,+$("#tRandN").value||25)).forEach(it=>tsel.add(it.key));renderTestBank()};
+$("#tAllShown").onclick=()=>{const cur=$("#tTopic").value||"All";bankItems().filter(it=>cur==="All"||it.q[0]===cur).slice(0,400).forEach(it=>tsel.add(it.key));renderTestBank()};
+$("#tClear").onclick=()=>{tsel.clear();renderTestBank()};
+$("#tForm").onsubmit=async e=>{e.preventDefault();if(!S.isOwner)return;const st=$("#tStatus"),btn=$("#tBtn");
+  const map=new Map(bankItems().map(it=>[it.key,it.q]));const qs=[...tsel].map(k=>map.get(k)).filter(Boolean).map(q=>({t:q[0],q:q[1],o:q[2],a:q[3],e:q[4]||""}));
+  if(qs.length<1){st.textContent="Select at least 1 question.";return}
+  if(qs.length>300){st.textContent="Max 300 questions per test.";return}
+  const sv=$("#tStart").value,startAt=sv?new Date(sv).getTime():0;
+  const {db,doc,collection,setDoc,serverTimestamp}=S.fb;btn.disabled=true;st.textContent="Creating…";
+  try{const ref=doc(collection(db,"tests"));
+    await setDoc(doc(db,"testq",ref.id),{qs});
+    await setDoc(ref,{title:$("#tTitle").value.trim().slice(0,120),courseId:$("#tCourse").value,duration:Math.min(300,Math.max(1,+$("#tDur").value||60)),marks:+$("#tMarks").value||1,neg:+$("#tNeg").value||0,startAt,count:qs.length,createdAt:serverTimestamp()});
+    $("#tForm").reset();tsel.clear();renderTestBank();st.textContent="";toast("Test created");
+  }catch(err){st.textContent="Could not create: "+errMsg(err)}btn.disabled=false};
+function testCourseName(t){return t.courseId==="free"?"Free":(courseById(t.courseId)?.name||"Course")}
+function canTakeTest(t){return S.isOwner||t.courseId==="free"||hasCourse([t.courseId])}
+function renderTestAdmin(){const el=$("#tList");if(!el)return;renderTestCourseSel();
+  const ts=S.tests.slice().sort((x,y)=>tsMs(y.createdAt)-tsMs(x.createdAt));
+  el.innerHTML=ts.length?ts.map(t=>`<div class="card"><div class="spread" style="align-items:flex-start"><div><b>${esc(t.title)}</b><div class="hi">${t.count} Qs · ${t.duration} min · ${t.marks} mark${t.marks==1?"":"s"} each${t.neg?` · −${t.neg==0.3333?"⅓":t.neg==0.25?"¼":t.neg==0.5?"½":t.neg}`:""}${t.startAt?` · Starts ${new Date(t.startAt).toLocaleString("en-IN",{day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"})}`:""}</div></div><span class="tag c">${esc(testCourseName(t))}</span></div>
+    <div class="row" style="margin-top:8px"><button class="btn sm ghost" data-tlb="${esc(t.id)}">Results</button><button class="btn sm danger" data-tdel="${esc(t.id)}">Delete</button></div></div>`).join(""):`<div class="empty">No tests yet.</div>`;
+}
+function renderTests(){
+  const el=$("#testList");if(!el)return;
+  const ts=S.tests.slice().sort((x,y)=>(y.startAt||tsMs(y.createdAt))-(x.startAt||tsMs(x.createdAt)));
+  if(!ts.length){el.innerHTML=`<div class="empty"><div class="big">📝</div>Tests will appear here soon.</div>`;return}
+  el.innerHTML=ts.map(t=>{const at=S.myAttempts[t.id],ok=canTakeTest(t),up=t.startAt&&t.startAt>nowMs();
+    const total=t.count*t.marks;
+    let action;
+    if(at)action=`<button class="btn sm" data-tres="${esc(t.id)}">Result: ${+(+at.score).toFixed(2)}/${total}</button><button class="btn sm ghost" data-tlb="${esc(t.id)}">🏆 Rank list</button><button class="btn sm ghost" data-tstart="${esc(t.id)}">Re-attempt</button>`;
+    else if(!ok)action=`<button class="btn sm alt" data-go="unlock" data-course="${esc(t.courseId)}">🔒 Unlock</button>`;
+    else if(up)action=`<span class="pill o">Starts ${new Date(t.startAt).toLocaleString("en-IN",{day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"})}</span>`;
+    else action=`<button class="btn sm alt" data-tstart="${esc(t.id)}">▶ Start test</button>`;
+    return `<div class="card"><div class="spread" style="align-items:flex-start"><div><b>${esc(t.title)}</b><div class="hi">${t.count} questions · ${t.duration} min · ${total} marks${t.neg?" · negative marking":""}</div></div><span class="tag ${t.courseId==="free"?"f":"c"}">${esc(testCourseName(t))}</span></div><div class="row" style="margin-top:10px">${action}</div></div>`}).join("");
+}
+/* ---- attempt ---- */
+let T=null,tTimer=null;
+const tKey=id=>"att_"+(S.user?S.user.uid:"anon")+"_"+id;
+async function startTest(id){
+  const t=S.tests.find(x=>x.id===id);if(!t)return;
+  if(!S.user){toast("Please sign in first");signIn();return}
+  if(!canTakeTest(t)){S.selCourse=t.courseId;go("unlock");return}
+  if(t.startAt&&t.startAt>nowMs()&&!S.isOwner){toast("This test hasn't started yet");return}
+  let qs;try{const s=await S.fb.getDoc(S.fb.doc(S.fb.db,"testq",id));if(!s.exists())throw new Error("missing");qs=s.data().qs}catch(e){toast("Couldn't load the test. Try again.");return}
+  const saved=LS.get(tKey(id),null);
+  if(saved&&saved.endAt>nowMs()&&saved.n===qs.length){T={...saved,qs,t};}
+  else T={id,n:qs.length,ans:Array(qs.length).fill(null),mark:[],seen:[0],i:0,startAt:nowMs(),endAt:nowMs()+t.duration*60000,qs,t,practice:!!S.myAttempts[id]||S.isOwner};
+  go("test");renderAttempt();clearInterval(tTimer);tTimer=setInterval(tick,1000);
+}
+function saveT(){if(!T)return;const {qs,t,...rest}=T;LS.set(tKey(T.id),rest)}
+function tick(){if(!T)return clearInterval(tTimer);const left=Math.round((T.endAt-nowMs())/1000);const el=$("#tClock");if(el)el.textContent=clock(left);if(left<=0)submitTest(true)}
+function renderAttempt(){
+  const q=T.qs[T.i],a=T.ans[T.i],done=T.ans.filter(x=>x!==null).length,marked=new Set(T.mark);
+  if(!T.seen.includes(T.i))T.seen.push(T.i);
+  $("#testArea").innerHTML=`<div class="tbar"><div class="spread"><div style="min-width:0"><b style="font-size:.9rem;display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(T.t.title)}</b><span class="hi">Q ${T.i+1}/${T.n} · answered ${done}${T.practice?" · practice":""}</span></div><span class="timer" id="tClock">${clock(Math.round((T.endAt-nowMs())/1000))}</span></div></div>
+  <div class="card"><span class="pill">${esc(q.t)}</span><div class="q">${T.i+1}. ${esc(q.q)}</div>
+   ${q.o.map((o,k)=>`<button class="opt ${a===k?"sel":""}" data-ta="${k}">${"ABCD"[k]}. ${esc(o)}</button>`).join("")}
+   <div class="row" style="justify-content:space-between;margin-top:10px">
+    <button class="btn sm ghost" data-tn="-1" ${T.i===0?"disabled":""}>← Prev</button>
+    <button class="btn sm ${marked.has(T.i)?"alt":"ghost"}" id="tMark">${marked.has(T.i)?"★ Marked":"☆ Mark for review"}</button>
+    ${a!==null?`<button class="btn sm ghost" id="tClr">Clear</button>`:""}
+    <button class="btn sm" data-tn="1" ${T.i===T.n-1?"disabled":""}>Next →</button></div></div>
+  <div class="card"><b>Question palette</b><div class="pal">${T.qs.map((_,k)=>{const an=T.ans[k]!==null,mk=marked.has(k),sn=T.seen.includes(k);return `<button class="${an&&mk?"am":mk?"m":an?"a":sn?"v":""} ${k===T.i?"cur":""}" data-tj="${k}">${k+1}</button>`}).join("")}</div>
+   <div class="legend"><span><i style="background:rgba(34,197,94,.5)"></i>Answered</span><span><i style="background:rgba(255,90,90,.4)"></i>Not answered</span><span><i style="background:rgba(168,85,247,.5)"></i>Marked</span><span><i style="background:#1a2a21"></i>Not visited</span></div>
+   <div style="margin-top:12px"><button class="btn alt" id="tSubmit" style="width:100%;justify-content:center">Submit test</button></div></div>`;
+  $("#tMark").onclick=()=>{const s=new Set(T.mark);s.has(T.i)?s.delete(T.i):s.add(T.i);T.mark=[...s];saveT();renderAttempt()};
+  const cl=$("#tClr");if(cl)cl.onclick=()=>{T.ans[T.i]=null;saveT();renderAttempt()};
+  $("#tSubmit").onclick=()=>{const un=T.n-T.ans.filter(x=>x!==null).length;askConfirm(`Submit the test?${un?` ${un} question(s) unanswered.`:""}`,"Submit",async()=>submitTest(false))};
+  saveT();
+}
+document.addEventListener("click",e=>{
+  if(T&&$("#v-test").classList.contains("on")&&!T.result){
+    const a=e.target.closest("[data-ta]");if(a){T.ans[T.i]=+a.dataset.ta;saveT();renderAttempt()}
+    const n=e.target.closest("[data-tn]");if(n){T.i=Math.max(0,Math.min(T.n-1,T.i+ +n.dataset.tn));renderAttempt();window.scrollTo(0,0)}
+    const j=e.target.closest("[data-tj]");if(j){T.i=+j.dataset.tj;renderAttempt();window.scrollTo(0,0)}
+  }
+  const s=e.target.closest("[data-tstart]");if(s)startTest(s.dataset.tstart);
+  const r=e.target.closest("[data-tres]");if(r)showSavedResult(r.dataset.tres);
+  const l=e.target.closest("[data-tlb]");if(l)showLeaderboard(l.dataset.tlb);
+  const d=e.target.closest("[data-tdel]");if(d&&S.isOwner){const t=S.tests.find(x=>x.id===d.dataset.tdel);if(!t)return;
+    askConfirm(`Delete test "${t.title}"? Its results are kept but students can't open it any more.`,"Delete",async()=>{try{await S.fb.deleteDoc(S.fb.doc(S.fb.db,"testq",t.id));await S.fb.deleteDoc(S.fb.doc(S.fb.db,"tests",t.id));toast("Test deleted")}catch(err){toast("Failed: "+errMsg(err))}})}
+});
+function scoreOf(qs,ans,t){let c=0,w=0;const topics={};qs.forEach((q,k)=>{const tp=topics[q.t]||(topics[q.t]={c:0,w:0,n:0});tp.n++;if(ans[k]===null||ans[k]===undefined)return;if(ans[k]===q.a){c++;tp.c++}else{w++;tp.w++}});
+  const score=+(c*t.marks-w*t.marks*t.neg).toFixed(2);return {c,w,s:qs.length-c-w,score,topics}}
+async function submitTest(auto){
+  if(!T||T.result)return;clearInterval(tTimer);
+  const r=scoreOf(T.qs,T.ans,T.t),taken=Math.min(T.t.duration*60,Math.round((nowMs()-T.startAt)/1000));
+  T.result={...r,taken};LS.set(tKey(T.id),null);
+  if(auto)toast("Time's up — test submitted");
+  let saved=false;
+  if(!T.practice&&S.fb&&S.user){try{await S.fb.setDoc(S.fb.doc(S.fb.db,"attempts",T.id+"_"+S.user.uid),{tid:T.id,uid:S.user.uid,name:(S.user.displayName||"Student").slice(0,60),score:r.score,correct:r.c,wrong:r.w,skipped:r.s,total:T.n,maxScore:T.n*T.t.marks,taken,answers:T.ans,topics:r.topics,createdAt:S.fb.serverTimestamp()});saved=true}catch(err){toast("Result couldn't be saved: "+errMsg(err))}}
+  renderResult(T.t,T.qs,T.ans,{...r,taken},saved||!!S.myAttempts[T.id],T.practice);
+}
+async function fetchAttempts(tid){const {db,collection,query,where,getDocs}=S.fb;if(!getDocs)return[];const s=await getDocs(query(collection(db,"attempts"),where("tid","==",tid)));return s.docs.map(d=>d.data()).sort((a,b)=>b.score-a.score||a.taken-b.taken)}
+async function renderResult(t,qs,ans,r,ranked,practice){
+  go("test");const max=qs.length*t.marks,acc=r.c+r.w?Math.round(r.c/(r.c+r.w)*100):0;
+  $("#testArea").innerHTML=`<div class="card res"><div class="hi">${esc(t.title)}${practice?" · practice attempt (not ranked)":""}</div><div class="score">${r.score} / ${max}</div>
+   <div class="rstats"><div><b id="rRank">…</b><span>Rank</span></div><div><b id="rPct">…</b><span>Percentile</span></div><div><b>${acc}%</b><span>Accuracy</span></div><div><b>${r.c}</b><span>Correct</span></div><div><b>${r.w}</b><span>Wrong</span></div><div><b>${clock(r.taken)}</b><span>Time</span></div></div>
+   <div class="row" style="justify-content:center"><button class="btn sm ghost" data-tlb="${esc(t.id)}">🏆 Rank list</button><button class="btn sm ghost" data-go="tests">All tests</button></div></div>
+  <div class="card"><b>Topic-wise analysis</b><table class="lb" style="margin-top:6px"><tr><th>Topic</th><th>✓</th><th>✗</th><th>Score %</th></tr>${Object.entries(r.topics).sort((a,b)=>(a[1].c/a[1].n)-(b[1].c/b[1].n)).map(([k,v])=>{const pc=Math.round(v.c/v.n*100);return `<tr><td>${esc(k)}</td><td>${v.c}</td><td>${v.w}</td><td style="color:${pc<40?"#ff9a9a":pc<70?"var(--gold)":"#86efac"}">${pc}%</td></tr>`}).join("")}</table><div class="hi" style="margin-top:6px">Weakest topics are at the top — revise these first.</div></div>
+  <h2>Solutions</h2>${qs.map((q,k)=>`<div class="card"><div class="q">${k+1}. ${esc(q.q)}</div>${q.o.map((o,j)=>`<div class="opt ${j===q.a?"ok":j===ans[k]?"no":""}">${"ABCD"[j]}. ${esc(o)}</div>`).join("")}${ans[k]===null||ans[k]===undefined?`<div class="hi">Not answered</div>`:""}${q.e?`<div class="exp">${esc(q.e)}</div>`:""}</div>`).join("")}`;
+  window.scrollTo(0,0);
+  try{const list=await fetchAttempts(t.id);const n=list.length;
+    if(practice||!n){$("#rRank").textContent=n?`~${1+list.filter(x=>x.score>r.score).length}/${n}`:"—";$("#rPct").textContent="—";return}
+    const rank=1+list.filter(x=>x.score>r.score||(x.score===r.score&&x.taken<r.taken)).length;
+    $("#rRank").textContent=`${rank}/${n}`;$("#rPct").textContent=n>1?Math.round(list.filter(x=>x.score<r.score).length/(n-1)*100)+"":"100";
+  }catch(e){$("#rRank").textContent="—";$("#rPct").textContent="—"}
+}
+async function showSavedResult(tid){const at=S.myAttempts[tid],t=S.tests.find(x=>x.id===tid);if(!at||!t)return;
+  let qs;try{const s=await S.fb.getDoc(S.fb.doc(S.fb.db,"testq",tid));qs=s.data().qs}catch(e){toast("Couldn't load solutions");return}
+  T={id:tid,t,qs,ans:at.answers||[],result:true};
+  renderResult(t,qs,at.answers||[],{c:at.correct,w:at.wrong,s:at.skipped,score:at.score,taken:at.taken,topics:at.topics||scoreOf(qs,at.answers||[],t).topics},true,false)}
+async function showLeaderboard(tid){const t=S.tests.find(x=>x.id===tid);if(!t)return;
+  $("#mTitle").textContent="🏆 "+t.title;$("#mBody").innerHTML=`<div class="empty">⏳ Loading…</div>`;$("#modal").classList.add("on");
+  try{const list=await fetchAttempts(tid);const me=S.user&&S.user.uid;const myIdx=list.findIndex(x=>x.uid===me);
+    const rows=(S.isOwner?list:list.slice(0,10)).map((x,i)=>`<tr class="${x.uid===me?"me":""}"><td>${i+1}</td><td>${esc(x.name||"Student")}</td><td><b>${+x.score}</b>/${x.maxScore}</td><td>${clock(x.taken||0)}</td></tr>`).join("");
+    $("#mBody").innerHTML=list.length?`<div class="hi" style="margin-bottom:8px">${list.length} student(s) attempted${myIdx>=0?` · <b style="color:var(--gold)">Your rank: ${myIdx+1}</b>`:""}</div><table class="lb"><tr><th>#</th><th>Name</th><th>Score</th><th>Time</th></tr>${rows}${!S.isOwner&&myIdx>=10?`<tr class="me"><td>${myIdx+1}</td><td>${esc(list[myIdx].name)}</td><td><b>${list[myIdx].score}</b>/${list[myIdx].maxScore}</td><td>${clock(list[myIdx].taken||0)}</td></tr>`:""}</table>`:`<div class="empty">No attempts yet.</div>`;
+  }catch(err){$("#mBody").innerHTML=`<div class="empty">Couldn't load (${esc(errMsg(err))}).</div>`}}
+
+function renderAll(){renderTests();if(S.isOwner)renderTestAdmin();renderVacancies();if(S.isOwner)renderCourseAdmin();renderLibrary("videos");renderLibrary("pdfs");renderMine();renderStats();renderNotices();renderPremium();setRole();renderAcct();if($("#v-unlock").classList.contains("on"))renderUnlock()}
 
 /* =================== practice =================== */
-const QB=()=>BASE_QB.concat(S.questions.filter(q=>Array.isArray(q.options)&&q.options.length===4).map(q=>[q.topic,q.q,q.options,q.ans,q.exp||""]));
+let BANK=[];
+const QB=()=>BASE_QB.concat(BANK,S.questions.filter(q=>Array.isArray(q.options)&&q.options.length===4).map(q=>[q.topic,q.q,q.options,q.ans,q.exp||""]));
+const qbTopics=()=>{const seen=new Set(),out=[];QB().forEach(q=>{if(!seen.has(q[0])){seen.add(q[0]);out.push(q[0])}});return out};
+fetch("qbank.json").then(r=>r.ok?r.json():[]).then(d=>{if(Array.isArray(d)){BANK=d.filter(q=>Array.isArray(q)&&q.length>=4&&Array.isArray(q[2])&&q[2].length===4);renderPracticeChips();renderPractice();if(typeof renderTestBank==="function")renderTestBank();if(!mock.running&&!mock.done&&$("#v-mock").classList.contains("on"))renderMockStart()}}).catch(()=>{});
 let pTopic="All",pIdx=0,pAns=null;
 const pList=()=>pTopic==="All"?QB():QB().filter(q=>q[0]===pTopic);
-function renderPracticeChips(){const ts=["All",...TOPICS.filter(t=>QB().some(q=>q[0]===t))];
-  $("#cPractice").innerHTML=ts.map(t=>`<button class="chip ${t===pTopic?"on":""}" data-pt="${esc(t)}">${esc(t)}</button>`).join("")}
+function renderPracticeChips(){const ts=["All",...qbTopics()];
+  $("#cPractice").innerHTML=`<select class="in" id="pTopicSel" aria-label="Topic">${ts.map(t=>`<option value="${esc(t)}" ${t===pTopic?"selected":""}>${t==="All"?`All topics (${QB().length} questions)`:esc(t)+` (${QB().filter(q=>q[0]===t).length})`}</option>`).join("")}</select>`;
+  $("#pTopicSel").onchange=e=>{pTopic=e.target.value;pIdx=0;pAns=null;renderPractice()}}
 function renderPractice(){
   const L=pList(); if(!L.length){$("#pCard").innerHTML=`<div class="empty">No questions in this topic yet.</div>`;return}
   if(pIdx>=L.length)pIdx=0; const q=L[pIdx];
@@ -671,7 +811,7 @@ const clock=s=>String(Math.floor(Math.max(s,0)/60)).padStart(2,"0")+":"+String(M
 function renderMockStart(){
   const total=QB().length;
   $("#mockArea").innerHTML=`<div class="card"><b>Physical Education — Full mock</b><p class="hi" style="margin:6px 0 12px">Random questions from all units (${total} in the bank). 1 minute per question.</p>
-  <label class="f" for="mN">Number of questions</label><select class="in" id="mN">${[10,20,30,50].filter(n=>n<=Math.max(total,10)).map(n=>`<option ${n===mock.n?"selected":""}>${n}</option>`).join("")}</select>
+  <label class="f" for="mN">Number of questions</label><select class="in" id="mN">${[10,20,30,50,100].filter(n=>n<=Math.max(total,10)).map(n=>`<option ${n===mock.n?"selected":""}>${n}</option>`).join("")}</select>
   <label class="chk" style="border:0;margin-top:6px"><input type="checkbox" id="mNeg" ${mock.neg?"checked":""}><span>Negative marking (−¼ per wrong answer)</span></label>
   <button class="btn alt" id="mStart" style="margin-top:8px">Start test</button></div>`;
   $("#mStart").onclick=startMock;
@@ -750,7 +890,7 @@ function clearUserListeners(){unsubs.forEach(u=>{try{u()}catch(e){}});unsubs=[]}
 
 async function onUser(user){
   const F=S.fb; clearUserListeners();
-  S.user=user; S.isOwner=false; S.access=null; S.premium={}; S.myPayments={}; S.requests=[]; S.students=[];
+  S.user=user; S.isOwner=false; S.access=null; S.premium={}; S.myPayments={}; S.myAttempts={}; S.requests=[]; S.students=[];
   if(user){
     // Owner check: only the owner can read admin/ping (enforced by firestore.rules, so no email is stored in this public code)
     try{ await F.getDoc(F.doc(F.db,"admin","ping")); S.isOwner=true; }catch(e){ S.isOwner=false; }
@@ -769,10 +909,11 @@ async function onUser(user){
         if(!first&&S.access&&before!==JSON.stringify({a:S.access.all,c:S.access.courses}))toast("🎉 Payment verified — your course is unlocked!");
         first=false; renderAll();
       },()=>{}));
+      unsubs.push(F.onSnapshot(F.query(F.collection(F.db,"attempts"),F.where("uid","==",user.uid)),s=>{S.myAttempts={};s.docs.forEach(d=>{const x=d.data();S.myAttempts[x.tid]=x});renderTests()},()=>{}));
       unsubs.push(F.onSnapshot(F.query(F.collection(F.db,"payments"),F.where("uid","==",user.uid)),s=>{S.myPayments={};s.docs.forEach(d=>{const x={...d.data(),_id:d.id};const k=x.courseId||LEGACY;const prev=S.myPayments[k];if(!prev||tsMs(x.createdAt)>=tsMs(prev.createdAt))S.myPayments[k]=x});if($("#v-unlock").classList.contains("on"))renderUnlock()},()=>{}));
     }
   }
-  renderAll(); renderRequests(); renderStudents(); renderQList();
+  S.myAttempts=S.myAttempts||{}; renderAll(); renderRequests(); renderStudents(); renderQList(); if(S.isOwner){renderTestBank();renderTestAdmin()}
   if(!S.isOwner && $("#v-owner").classList.contains("on")) go("home");
 }
 
@@ -787,6 +928,7 @@ async function initFirebase(){
   F.getRedirectResult(F.auth).catch(()=>{});
   // public data
   F.onSnapshot(F.query(F.collection(F.db,"materials"),F.orderBy("createdAt","desc")),s=>{S.materials=s.docs.map(d=>({id:d.id,...d.data()})).filter(m=>!m.hidden);S.dbReady=true;renderAll()},err=>{console.error(err);S.dbReady=true;renderAll()});
+  F.onSnapshot(F.collection(F.db,"tests"),s=>{S.tests=s.docs.map(d=>({id:d.id,...d.data()}));renderTests();if(S.isOwner)renderTestAdmin()},()=>{});
   F.onSnapshot(F.collection(F.db,"courses"),s=>{S.courses=s.docs.map(d=>({id:d.id,...d.data()}));renderAll();renderCourseAdmin();renderRequests();renderStudents()},()=>{});
   F.onSnapshot(F.collection(F.db,"vacancies"),s=>{S.vacancies=s.docs.map(d=>({id:d.id,...d.data()}));renderVacancies()},()=>{});
   F.onSnapshot(F.query(F.collection(F.db,"notices"),F.orderBy("createdAt","desc"),F.limit(10)),s=>{S.notices=s.docs.map(d=>({id:d.id,...d.data()}));renderNotices()},()=>{});
