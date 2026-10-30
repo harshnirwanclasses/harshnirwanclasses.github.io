@@ -677,7 +677,7 @@ function canTakeTest(t){return S.isOwner||t.courseId==="free"||hasCourse([t.cour
 function renderTestAdmin(){const el=$("#tList");if(!el)return;renderTestCourseSel();
   const ts=S.tests.slice().sort((x,y)=>tsMs(y.createdAt)-tsMs(x.createdAt));
   el.innerHTML=ts.length?ts.map(t=>`<div class="card"><div class="spread" style="align-items:flex-start"><div><b>${esc(t.title)}</b><div class="hi">${t.count} Qs · ${t.duration} min · ${t.marks} mark${t.marks==1?"":"s"} each${t.neg?` · −${t.neg==0.3333?"⅓":t.neg==0.25?"¼":t.neg==0.5?"½":t.neg}`:""}${t.startAt?` · Starts ${new Date(t.startAt).toLocaleString("en-IN",{day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"})}`:""}</div></div><span class="tag c">${esc(testCourseName(t))}</span></div>
-    <div class="row" style="margin-top:8px"><button class="btn sm ghost" data-tlb="${esc(t.id)}">Results</button><button class="btn sm danger" data-tdel="${esc(t.id)}">Delete</button></div></div>`).join(""):`<div class="empty">No tests yet.</div>`;
+    <div class="row" style="margin-top:8px"><button class="btn sm alt" data-tshare="${esc(t.id)}">🔗 Share link</button><button class="btn sm ghost" data-tlb="${esc(t.id)}">Results</button><button class="btn sm danger" data-tdel="${esc(t.id)}">Delete</button></div></div>`).join(""):`<div class="empty">No tests yet.</div>`;
 }
 function renderTests(){
   const el=$("#testList");if(!el)return;
@@ -690,20 +690,21 @@ function renderTests(){
     else if(!ok)action=`<button class="btn sm alt" data-go="unlock" data-course="${esc(t.courseId)}">🔒 Unlock</button>`;
     else if(up)action=`<span class="pill o">Starts ${new Date(t.startAt).toLocaleString("en-IN",{day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"})}</span>`;
     else action=`<button class="btn sm alt" data-tstart="${esc(t.id)}">▶ Start test</button>`;
-    return `<div class="card"><div class="spread" style="align-items:flex-start"><div><b>${esc(t.title)}</b><div class="hi">${t.count} questions · ${t.duration} min · ${total} marks${t.neg?" · negative marking":""}</div></div><span class="tag ${t.courseId==="free"?"f":"c"}">${esc(testCourseName(t))}</span></div><div class="row" style="margin-top:10px">${action}</div></div>`}).join("");
+    action+=`<button class="btn sm ghost" data-tshare="${esc(t.id)}" title="Share">🔗</button>`;
+    return `<div class="card" data-tcard="${esc(t.id)}" ${t.id===S.hlTest?`style="border-color:var(--orange);box-shadow:0 0 24px rgba(255,106,26,.35)"`:""}>${t.id===S.hlTest?`<div class="kicker" style="margin-bottom:8px">👋 You were invited to this test</div>`:""}<div class="spread" style="align-items:flex-start"><div><b>${esc(t.title)}</b><div class="hi">${t.count} questions · ${t.duration} min · ${total} marks${t.neg?" · negative marking":""}</div></div><span class="tag ${t.courseId==="free"?"f":"c"}">${esc(testCourseName(t))}</span></div><div class="row" style="margin-top:10px">${action}</div></div>`}).join("");
 }
 /* ---- attempt ---- */
 let T=null,tTimer=null;
 const tKey=id=>"att_"+(S.user?S.user.uid:"anon")+"_"+id;
 async function startTest(id){
   const t=S.tests.find(x=>x.id===id);if(!t)return;
-  if(!S.user){toast("Please sign in first");signIn();return}
+  if(!S.user&&t.courseId!=="free"){toast("Please sign in first");signIn();return}
   if(!canTakeTest(t)){S.selCourse=t.courseId;go("unlock");return}
   if(t.startAt&&t.startAt>nowMs()&&!S.isOwner){toast("This test hasn't started yet");return}
   let qs;try{const s=await S.fb.getDoc(S.fb.doc(S.fb.db,"testq",id));if(!s.exists())throw new Error("missing");qs=s.data().qs}catch(e){toast("Couldn't load the test. Try again.");return}
   const saved=LS.get(tKey(id),null);
   if(saved&&saved.endAt>nowMs()&&saved.n===qs.length){T={...saved,qs,t};}
-  else T={id,n:qs.length,ans:Array(qs.length).fill(null),mark:[],seen:[0],i:0,startAt:nowMs(),endAt:nowMs()+t.duration*60000,qs,t,practice:!!S.myAttempts[id]||S.isOwner};
+  else T={id,n:qs.length,ans:Array(qs.length).fill(null),mark:[],seen:[0],i:0,startAt:nowMs(),endAt:nowMs()+t.duration*60000,qs,t,practice:!!S.myAttempts[id]||S.isOwner,guest:!S.user};
   go("test");renderAttempt();clearInterval(tTimer);tTimer=setInterval(tick,1000);
 }
 function saveT(){if(!T)return;const {qs,t,...rest}=T;LS.set(tKey(T.id),rest)}
@@ -734,6 +735,7 @@ document.addEventListener("click",e=>{
     const j=e.target.closest("[data-tj]");if(j){T.i=+j.dataset.tj;renderAttempt();window.scrollTo(0,0)}
   }
   const s=e.target.closest("[data-tstart]");if(s)startTest(s.dataset.tstart);
+  const sh=e.target.closest("[data-tshare]");if(sh)shareTest(sh.dataset.tshare);
   const r=e.target.closest("[data-tres]");if(r)showSavedResult(r.dataset.tres);
   const l=e.target.closest("[data-tlb]");if(l)showLeaderboard(l.dataset.tlb);
   const d=e.target.closest("[data-tdel]");if(d&&S.isOwner){const t=S.tests.find(x=>x.id===d.dataset.tdel);if(!t)return;
@@ -748,17 +750,58 @@ async function submitTest(auto){
   if(auto)toast("Time's up — test submitted");
   let saved=false;
   if(!T.practice&&S.fb&&S.user){try{await S.fb.setDoc(S.fb.doc(S.fb.db,"attempts",T.id+"_"+S.user.uid),{tid:T.id,uid:S.user.uid,name:(S.user.displayName||"Student").slice(0,60),score:r.score,correct:r.c,wrong:r.w,skipped:r.s,total:T.n,maxScore:T.n*T.t.marks,taken,answers:T.ans,topics:r.topics,createdAt:S.fb.serverTimestamp()});saved=true}catch(err){toast("Result couldn't be saved: "+errMsg(err))}}
+  if(!S.user)guestRes={tid:T.id,ans:T.ans.slice(),r,taken};
   renderResult(T.t,T.qs,T.ans,{...r,taken},saved||!!S.myAttempts[T.id],T.practice);
+}
+let guestRes=null;
+async function saveGuestResult(){
+  if(!guestRes||!S.user||!S.fb)return;const g=guestRes;guestRes=null;const t=S.tests.find(x=>x.id===g.tid);if(!t)return;
+  const ref=S.fb.doc(S.fb.db,"attempts",g.tid+"_"+S.user.uid);
+  try{const ex=await S.fb.getDoc(ref);if(ex.exists()){toast("You'd already taken this test — your first score stays on the rank list");return}
+    await S.fb.setDoc(ref,{tid:g.tid,uid:S.user.uid,name:(S.user.displayName||"Student").slice(0,60),score:g.r.score,correct:g.r.c,wrong:g.r.w,skipped:g.r.s,total:g.ans.length,maxScore:g.ans.length*t.marks,taken:g.taken,answers:g.ans,topics:g.r.topics,createdAt:S.fb.serverTimestamp()});
+    toast("Score saved — see your rank!");
+    if(T&&T.id===g.tid&&$("#v-test").classList.contains("on"))renderResult(t,T.qs,g.ans,{...g.r,taken:g.taken},true,false);
+  }catch(err){toast("Couldn't save score: "+errMsg(err))}
+}
+/* ---- share links ---- */
+const siteBase=()=>location.origin+location.pathname;
+const testLink=id=>siteBase()+"?test="+encodeURIComponent(id);
+function shareTest(id){const t=S.tests.find(x=>x.id===id);if(!t)return;const url=testLink(id);
+  const msg=`📝 ${t.courseId==="free"&&!/free/i.test(t.title)?"FREE ":""}${t.title} — ${t.count} questions, ${t.duration} min\nPhysical Education (KVS · NVS · DSSSB · UP TGT/PGT)\nTest do aur apni All-India rank dekho 👇\n${url}\n— Harsh Nirwan Classes`;
+  const free=t.courseId==="free";
+  $("#mTitle").textContent="🔗 Share: "+t.title;
+  $("#mBody").innerHTML=`${free?"":`<div class="notice">This test is for <b>${esc(testCourseName(t))}</b> students. Others will see it locked with an Unlock button.</div>`}
+   <div class="copyrow"><code>${esc(url)}</code><button class="btn sm ghost" data-copy="${esc(url)}">Copy</button></div>
+   <div class="hi" style="margin:12px 0 6px">Share on</div>
+   <div class="row"><a class="btn sm" style="background:#25D366" href="https://wa.me/?text=${encodeURIComponent(msg)}" target="_blank" rel="noopener">WhatsApp</a>
+   <a class="btn sm" style="background:#229ED9" href="https://t.me/share/url?url=${encodeURIComponent(url)}&text=${encodeURIComponent(msg.replace("\n"+url,""))}" target="_blank" rel="noopener">Telegram</a>
+   <a class="btn sm" style="background:#1877F2" href="https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(url)}" target="_blank" rel="noopener">Facebook</a>
+   <a class="btn sm" style="background:#111" href="https://twitter.com/intent/tweet?text=${encodeURIComponent(msg)}" target="_blank" rel="noopener">X</a>
+   ${navigator.share?`<button class="btn sm alt" id="nativeShare">More…</button>`:""}</div>
+   <div class="hi" style="margin:14px 0 6px">Ready-made message (Instagram bio / story / YouTube description)</div>
+   <div class="copyrow" style="align-items:flex-start"><code style="white-space:pre-wrap">${esc(msg)}</code><button class="btn sm ghost" data-copy="${esc(msg)}">Copy</button></div>`;
+  $("#modal").classList.add("on");
+  const ns=$("#nativeShare");if(ns)ns.onclick=()=>navigator.share({title:t.title,text:msg.replace("\n"+url,""),url}).catch(()=>{});
+}
+let linkTest=new URLSearchParams(location.search).get("test")||((location.hash.match(/^#test-([\w-]+)$/)||[])[1])||null;
+function handleTestLink(){
+  if(!linkTest||!S.tests.length)return;const t=S.tests.find(x=>x.id===linkTest);
+  if(!t){toast("This test link is no longer available");linkTest=null;return}
+  S.hlTest=t.id;go("tests");linkTest=null;
+  setTimeout(()=>{const card=document.querySelector(`#testList [data-tcard="${CSS.escape(t.id)}"]`);if(card)card.scrollIntoView({behavior:"smooth",block:"center"})},300);
 }
 async function fetchAttempts(tid){const {db,collection,query,where,getDocs}=S.fb;if(!getDocs)return[];const s=await getDocs(query(collection(db,"attempts"),where("tid","==",tid)));return s.docs.map(d=>d.data()).sort((a,b)=>b.score-a.score||a.taken-b.taken)}
 async function renderResult(t,qs,ans,r,ranked,practice){
   go("test");const max=qs.length*t.marks,acc=r.c+r.w?Math.round(r.c/(r.c+r.w)*100):0;
   $("#testArea").innerHTML=`<div class="card res"><div class="hi">${esc(t.title)}${practice?" · practice attempt (not ranked)":""}</div><div class="score">${r.score} / ${max}</div>
    <div class="rstats"><div><b id="rRank">…</b><span>Rank</span></div><div><b id="rPct">…</b><span>Percentile</span></div><div><b>${acc}%</b><span>Accuracy</span></div><div><b>${r.c}</b><span>Correct</span></div><div><b>${r.w}</b><span>Wrong</span></div><div><b>${clock(r.taken)}</b><span>Time</span></div></div>
-   <div class="row" style="justify-content:center"><button class="btn sm ghost" data-tlb="${esc(t.id)}">🏆 Rank list</button><button class="btn sm ghost" data-go="tests">All tests</button></div></div>
+   ${!S.user?`<div class="premium" style="text-align:left;margin:8px 0"><b>🏆 See your All-India rank</b><div class="hi">Sign in with Google to save this score and appear on the rank list.</div><div style="margin-top:8px"><button class="btn alt" id="guestSave">🔐 Sign in & save score</button></div></div>`:""}
+   <div class="row" style="justify-content:center">${S.user?`<button class="btn sm ghost" data-tlb="${esc(t.id)}">🏆 Rank list</button>`:""}<button class="btn sm ghost" data-tshare="${esc(t.id)}">🔗 Share test</button><button class="btn sm ghost" data-go="tests">All tests</button></div></div>
   <div class="card"><b>Topic-wise analysis</b><table class="lb" style="margin-top:6px"><tr><th>Topic</th><th>✓</th><th>✗</th><th>Score %</th></tr>${Object.entries(r.topics).sort((a,b)=>(a[1].c/a[1].n)-(b[1].c/b[1].n)).map(([k,v])=>{const pc=Math.round(v.c/v.n*100);return `<tr><td>${esc(k)}</td><td>${v.c}</td><td>${v.w}</td><td style="color:${pc<40?"#ff9a9a":pc<70?"var(--gold)":"#86efac"}">${pc}%</td></tr>`}).join("")}</table><div class="hi" style="margin-top:6px">Weakest topics are at the top — revise these first.</div></div>
   <h2>Solutions</h2>${qs.map((q,k)=>`<div class="card"><div class="q">${k+1}. ${esc(q.q)}</div>${q.o.map((o,j)=>`<div class="opt ${j===q.a?"ok":j===ans[k]?"no":""}">${"ABCD"[j]}. ${esc(o)}</div>`).join("")}${ans[k]===null||ans[k]===undefined?`<div class="hi">Not answered</div>`:""}${q.e?`<div class="exp">${esc(q.e)}</div>`:""}</div>`).join("")}`;
   window.scrollTo(0,0);
+  const gs=$("#guestSave");if(gs)gs.onclick=signIn;
+  if(!S.user){$("#rRank").textContent="—";$("#rPct").textContent="—";return}
   try{const list=await fetchAttempts(t.id);const n=list.length;
     if(practice||!n){$("#rRank").textContent=n?`~${1+list.filter(x=>x.score>r.score).length}/${n}`:"—";$("#rPct").textContent="—";return}
     const rank=1+list.filter(x=>x.score>r.score||(x.score===r.score&&x.taken<r.taken)).length;
@@ -913,6 +956,7 @@ async function onUser(user){
       unsubs.push(F.onSnapshot(F.query(F.collection(F.db,"payments"),F.where("uid","==",user.uid)),s=>{S.myPayments={};s.docs.forEach(d=>{const x={...d.data(),_id:d.id};const k=x.courseId||LEGACY;const prev=S.myPayments[k];if(!prev||tsMs(x.createdAt)>=tsMs(prev.createdAt))S.myPayments[k]=x});if($("#v-unlock").classList.contains("on"))renderUnlock()},()=>{}));
     }
   }
+  if(user&&guestRes)saveGuestResult();
   S.myAttempts=S.myAttempts||{}; renderAll(); renderRequests(); renderStudents(); renderQList(); if(S.isOwner){renderTestBank();renderTestAdmin()}
   if(!S.isOwner && $("#v-owner").classList.contains("on")) go("home");
 }
@@ -928,7 +972,7 @@ async function initFirebase(){
   F.getRedirectResult(F.auth).catch(()=>{});
   // public data
   F.onSnapshot(F.query(F.collection(F.db,"materials"),F.orderBy("createdAt","desc")),s=>{S.materials=s.docs.map(d=>({id:d.id,...d.data()})).filter(m=>!m.hidden);S.dbReady=true;renderAll()},err=>{console.error(err);S.dbReady=true;renderAll()});
-  F.onSnapshot(F.collection(F.db,"tests"),s=>{S.tests=s.docs.map(d=>({id:d.id,...d.data()}));renderTests();if(S.isOwner)renderTestAdmin()},()=>{});
+  F.onSnapshot(F.collection(F.db,"tests"),s=>{S.tests=s.docs.map(d=>({id:d.id,...d.data()}));renderTests();if(S.isOwner)renderTestAdmin();handleTestLink()},()=>{});
   F.onSnapshot(F.collection(F.db,"courses"),s=>{S.courses=s.docs.map(d=>({id:d.id,...d.data()}));renderAll();renderCourseAdmin();renderRequests();renderStudents()},()=>{});
   F.onSnapshot(F.collection(F.db,"vacancies"),s=>{S.vacancies=s.docs.map(d=>({id:d.id,...d.data()}));renderVacancies()},()=>{});
   F.onSnapshot(F.query(F.collection(F.db,"notices"),F.orderBy("createdAt","desc"),F.limit(10)),s=>{S.notices=s.docs.map(d=>({id:d.id,...d.data()}));renderNotices()},()=>{});
