@@ -267,7 +267,7 @@ function renderUnlock(){
   if(p&&p.status==="rejected") status=`<div class="notice" style="border-color:var(--red);background:rgba(255,90,90,.1)">❌ We couldn't find this payment (ref ${esc(p.utr)}). Check the reference number and submit again, or contact us on WhatsApp.</div>`;
   el.innerHTML=head+status+`
   <div class="card"><b>Step 1 · Pay</b><div class="hi">PhonePe / Google Pay / Paytm से भुगतान करें</div>
-   ${(S.qrImg||c.upi)?`<div class="qrwrap" style="text-align:center"><div class="qrbox" id="payQr"><div class="empty" style="padding:30px 0;color:#555">⏳</div></div>
+   ${(S.qrImg||DEFAULT_QR||c.upi)?`<div class="qrwrap" style="text-align:center"><div class="qrbox" id="payQr"><div class="empty" style="padding:30px 0;color:#555">⏳</div></div>
      <div style="font-weight:700">Scan & pay ${c.price?`<span style="color:var(--gold)">₹${esc(c.price)}</span>`:""}</div>
      <div class="hi">Any UPI app · किसी भी UPI ऐप से स्कैन करें</div>
      <div class="hi" style="margin-top:6px">Paying from this same phone? Save the QR, then in your UPI app tap <b>Scan → Gallery</b>.</div>
@@ -433,6 +433,7 @@ document.addEventListener("click",e=>{const b=e.target.closest("[data-dq]");if(b
 
 /* =================== render all =================== */
 /* =================== payment QR =================== */
+const DEFAULT_QR="payment-qr.png";
 let qrLibP=null;
 function loadQrLib(){if(qrLibP)return qrLibP;qrLibP=new Promise((res,rej)=>{const sc=document.createElement("script");sc.src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js";sc.onload=()=>res(window.qrcode);sc.onerror=()=>{qrLibP=null;rej(new Error("QR failed to load"))};document.head.appendChild(sc)});return qrLibP}
 async function upiQrDataUrl(upiUrl){const qrcode=await loadQrLib();const q=qrcode(0,"M");q.addData(upiUrl);q.make();return q.createDataURL(8,2)}
@@ -440,17 +441,17 @@ function shrinkImage(file,max=700){return new Promise((res,rej)=>{const img=new 
   const x=c.getContext("2d");x.fillStyle="#fff";x.fillRect(0,0,c.width,c.height);x.drawImage(img,0,0,c.width,c.height);let d=c.toDataURL("image/png");if(d.length>700000)d=c.toDataURL("image/jpeg",.9);URL.revokeObjectURL(img.src);res(d)};img.onerror=()=>rej(new Error("Not an image"));img.src=URL.createObjectURL(file)})}
 let qrPending=null;
 function renderQrPreview(){const el=$("#qrPreview");if(!el)return;const src=qrPending||S.qrImg;
-  el.innerHTML=src?`<div class="qrbox photo-qr" style="margin:0 0 10px"><img src="${esc(src)}" alt="Payment QR"></div>${qrPending?`<div class="hi">Not saved yet — tap <b>Save QR</b>.</div>`:`<div class="hi">✅ This QR is live on the Unlock page.</div>`}`:`<div class="hi">No QR uploaded yet.</div>`}
+  el.innerHTML=src?`<div class="qrbox photo-qr" style="margin:0 0 10px"><img src="${esc(src)}" alt="Payment QR"></div>${qrPending?`<div class="hi">Not saved yet — tap <b>Save QR</b>.</div>`:`<div class="hi">✅ This QR is live on the Unlock page.</div>`}`:`<div class="qrbox photo-qr" style="margin:0 0 10px;width:min(200px,60%)"><img src="${DEFAULT_QR}" alt="Payment QR"></div><div class="hi">✅ Your PhonePe QR is live on the Unlock page. Upload a different one here to replace it.</div>`}
 $("#qrFile").onchange=async()=>{const f=$("#qrFile").files[0];if(!f)return;try{qrPending=await shrinkImage(f);$("#dropQ").classList.add("has");$("#dropQTxt").innerHTML=`<b>${esc(f.name)}</b>`;renderQrPreview()}catch(e){$("#qrStatus").textContent="That file isn't an image."}};
 $("#qrSave").onclick=async()=>{if(!S.isOwner||!qrPending){$("#qrStatus").textContent=qrPending?"":"Choose a QR image first.";return}
   try{await S.fb.setDoc(S.fb.doc(S.fb.db,"config","qr"),{img:qrPending,updatedAt:S.fb.serverTimestamp()});qrPending=null;$("#dropQ").classList.remove("has");$("#dropQTxt").innerHTML=`<b>Tap to choose QR image</b><br><span class="hi">PNG / JPG screenshot</span>`;$("#qrStatus").textContent="";toast("QR saved — students can scan it now")}
   catch(err){$("#qrStatus").textContent="Could not save: "+errMsg(err)}};
 $("#qrRemove").onclick=()=>{if(!S.isOwner)return;askConfirm("Remove your uploaded QR? The site will show an automatic QR from your UPI ID instead.","Remove",async()=>{try{await S.fb.deleteDoc(S.fb.doc(S.fb.db,"config","qr"));qrPending=null;toast("QR removed")}catch(err){toast("Failed: "+errMsg(err))}})};
 async function fillQr(upiUrl){const box=$("#payQr");if(!box)return;
-  if(S.qrImg){box.innerHTML=`<img src="${esc(S.qrImg)}" alt="Scan to pay">`;box.classList.add("photo-qr")}
+  if(S.qrImg||DEFAULT_QR){box.innerHTML=`<img src="${esc(S.qrImg||DEFAULT_QR)}" alt="Scan to pay with PhonePe / any UPI app">`;box.classList.add("photo-qr")}
   else if(upiUrl){try{box.innerHTML=`<img src="${await upiQrDataUrl(upiUrl)}" alt="Scan to pay">`}catch(e){box.closest(".qrwrap").style.display="none"}}
   else box.closest(".qrwrap").style.display="none";
-  const img=box.querySelector("img"),dl=$("#qrDl");if(img&&dl){dl.href=img.src;dl.download="HarshNirwanClasses-payment-QR."+(img.src.startsWith("data:image/jpeg")?"jpg":"png")}}
+  const img=box.querySelector("img"),dl=$("#qrDl");if(img&&dl){dl.href=img.getAttribute("src");dl.download="HarshNirwanClasses-payment-QR."+(img.src.startsWith("data:image/jpeg")?"jpg":"png")}}
 
 /* =================== vacancies =================== */
 S.vacancies=[];
