@@ -166,6 +166,15 @@ nav button.on svg.i{filter:drop-shadow(0 0 6px rgba(255,106,26,.7))}
 .qrbox{background:#fff;border-radius:16px;padding:12px;width:min(260px,80%);margin:12px auto 8px;box-shadow:0 0 30px rgba(255,106,26,.25)}
 .qrbox img{display:block;width:100%;height:auto;image-rendering:pixelated}
 .qrbox.photo-qr img{image-rendering:auto}
+.ccard{display:block;cursor:pointer;background:#0a1610;border:1.5px solid var(--line);border-radius:14px;padding:12px 14px;margin-bottom:10px;position:relative}
+.ccard.on{border-color:var(--orange);background:rgba(255,106,26,.08);box-shadow:0 0 18px rgba(255,106,26,.15)}
+.ccard input{position:absolute;opacity:0;pointer-events:none}
+.ccard .cp{font-size:1.25rem;font-weight:800;color:var(--gold);white-space:nowrap}
+.ccard.owned{border-color:rgba(34,197,94,.5)}
+.cchk{display:flex;flex-wrap:wrap;gap:8px}
+.cchk label{display:flex;align-items:center;gap:6px;background:#0a1610;border:1px solid var(--line);border-radius:99px;padding:6px 12px;font-size:.82rem;cursor:pointer}
+.cchk input{accent-color:var(--orange)}
+.tag.c{background:rgba(255,194,74,.12);color:var(--gold)}
 .seo{font-size:.84rem;color:var(--muted)}
 .seo h3{font-size:.95rem;color:var(--ink);margin:8px 0 4px}
 footer{max-width:900px;margin:0 auto;padding:4px 16px 24px;font-size:.75rem;color:var(--muted);text-align:center}
@@ -334,6 +343,7 @@ footer{max-width:900px;margin:0 auto;padding:4px 16px 24px;font-size:.75rem;colo
     <h2>Owner panel</h2><p class="hi sub">Only you can see this</p>
     <div class="seg">
       <button class="on" data-pane="pUp">Upload</button>
+      <button data-pane="pCourses">Courses</button>
       <button data-pane="pReq">Payments <span id="reqCount"></span></button>
       <button data-pane="pStu">Students</button>
       <button data-pane="pQ">Questions</button>
@@ -386,6 +396,7 @@ footer{max-width:900px;margin:0 auto;padding:4px 16px 24px;font-size:.75rem;colo
             <div style="flex:1;min-width:140px"><label class="f" for="upTopic">Topic</label><select class="in" id="upTopic"></select></div>
             <div style="flex:1;min-width:140px"><label class="f" for="upExam">Exam</label><select class="in" id="upExam"></select></div>
           </div>
+          <div id="upCoursesWrap"><label class="f">Course(s) this lesson belongs to</label><div id="upCourses"></div></div>
           <label class="chk" style="border:0;margin-top:8px"><input type="checkbox" id="upFree"><span>Free preview <span class="hi">— visible to everyone without paying</span></span></label>
           <div class="bar" id="upBar" style="display:none;margin:8px 0"><i style="width:0"></i></div>
           <div style="margin-top:10px" class="row"><button class="btn alt" id="upBtn" type="submit">Upload & publish</button><span id="upStatus" class="hi"></span></div>
@@ -395,13 +406,31 @@ footer{max-width:900px;margin:0 auto;padding:4px 16px 24px;font-size:.75rem;colo
       <div id="lMine"></div>
     </div>
 
+    <div class="pane" id="pCourses">
+      <div class="card">
+        <b id="cFormTitle">Add a course / batch</b><div class="hi">Each course has its own price. Students buy a course and only its lessons unlock.</div>
+        <form id="cForm">
+          <input type="hidden" id="cId">
+          <label class="f" for="cName">Course name</label><input class="in" id="cName" required maxlength="80" placeholder="e.g. KVS / NVS PET Batch">
+          <label class="f" for="cPrice">Price (₹)</label><input class="in" id="cPrice" type="number" min="0" required placeholder="e.g. 499">
+          <label class="f" for="cDesc">What's included (optional)</label><textarea class="in" id="cDesc" rows="2" maxlength="300" placeholder="e.g. All KVS/NVS PET videos, notes & mock tests"></textarea>
+          <label class="chk" style="border:0;margin-top:6px"><input type="checkbox" id="cAll"><span><b>All-in-One combo</b> <span class="hi">— unlocks every lesson in every course</span></span></label>
+          <div class="row" style="margin-top:10px"><button class="btn alt" id="cBtn">Save course</button><button class="btn sm ghost" type="button" id="cCancel" style="display:none">Cancel edit</button><span class="hi" id="cStatus"></span></div>
+        </form>
+      </div>
+      <div id="cSuggest"></div>
+      <div id="cLegacy"></div>
+      <h2>Your courses</h2>
+      <div id="cList"></div>
+    </div>
+
     <div class="pane" id="pReq">
       <p class="hi sub">Students who say they've paid. Check the money reached your bank/UPI app before approving.</p>
       <div id="reqList"></div>
     </div>
 
     <div class="pane" id="pStu">
-      <p class="hi sub">Students with full access. Remove to lock their course again.</p>
+      <p class="hi sub">Paid students and the courses they own. Tap × to remove one course, or Remove all.</p>
       <div id="stuList"></div>
     </div>
 

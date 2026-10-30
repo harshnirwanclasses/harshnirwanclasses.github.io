@@ -116,13 +116,25 @@ renderCountdown();
 /* =================== app state =================== */
 const S = {
   fb:null, user:null, isOwner:false, paid:false,
-  materials:[], premium:{}, notices:[], payCfg:{}, qrImg:null, myPayment:null,
+  materials:[], premium:{}, notices:[], payCfg:{}, qrImg:null, myPayment:null, courses:[], access:null, myPayments:{}, selCourse:null,
   requests:[], students:[], questions:[], dbReady:false
 };
 let unsubs=[];   // listeners that depend on the signed-in user
 const filt={videos:"All",pdfs:"All"};
-const hasAccess=()=>S.isOwner||S.paid;
-const isOpen=m=>m.free||hasAccess();
+const LEGACY="full";
+const itemCourses=m=>Array.isArray(m.courses)&&m.courses.length?m.courses:[LEGACY];
+const accessAll=a=>!!a&&(a.all===true||!("courses" in a));
+function hasCourse(cs){if(S.isOwner)return true;const a=S.access;if(!a)return false;if(accessAll(a))return true;return cs.some(c=>a.courses&&a.courses[c])}
+const isOpen=m=>m.free||hasCourse(itemCourses(m));
+const hasAccess=()=>S.isOwner||!!S.access;
+function courseList(){
+  if(S.courses.length)return S.courses.slice().sort((x,y)=>(x.all?1:0)-(y.all?1:0)||(+x.price||0)-(+y.price||0));
+  return [{id:LEGACY,name:"Full Course",price:S.payCfg.price||"",desc:S.payCfg.note||"",all:true}];
+}
+function courseById(id){return courseList().find(c=>c.id===id)||(id===LEGACY?{id:LEGACY,name:"Full Course",price:S.payCfg.price||"",all:true}:null)}
+function ownsCourse(c){if(S.isOwner)return true;const a=S.access;if(!a)return false;if(accessAll(a))return true;if(c.all)return false;return !!(a.courses&&a.courses[c.id])}
+const courseNames=ids=>ids.map(id=>courseById(id)?.name).filter(Boolean);
+document.addEventListener("click",e=>{const b=e.target.closest("[data-course]");if(b)S.selCourse=b.dataset.course},true);
 
 /* =================== rendering: header / role =================== */
 function renderAcct(){
@@ -136,7 +148,7 @@ function setRole(){
   document.body.classList.toggle("owner",S.isOwner);
   $("#navOwner").style.display=S.isOwner?"flex":"none";
   if(S.isOwner) rb.innerHTML="👑 <b>Owner</b> · upload, set price & approve students";
-  else if(S.paid) rb.innerHTML=`⭐ <b>Premium</b> · ${esc(S.user?.displayName||"Student")}`;
+  else if(S.access) rb.innerHTML=`⭐ <b>Premium</b> · ${esc(S.user?.displayName||"Student")}`;
   else if(S.user) rb.innerHTML=`🎓 ${esc(S.user.displayName||"Student")} · free preview`;
   else rb.innerHTML="🎓 Sign in with Google to join";
 }
@@ -152,17 +164,17 @@ function renderLibrary(kind){
   const el=$("#l"+cap(kind));
   if(!S.dbReady){el.innerHTML=`<div class="empty"><div class="big">⏳</div>Loading classes…</div>`;return}
   const locked=all.filter(m=>!isOpen(m)).length;
-  const banner=locked?`<div class="premium" style="padding:12px"><div class="spread"><span>🔒 <b>${locked} locked</b> — unlock the full course</span><button class="btn sm alt" data-go="unlock">Unlock</button></div></div>`:"";
+  const banner=locked?`<div class="premium" style="padding:12px"><div class="spread"><span>🔒 <b>${locked} locked</b> — buy a course to unlock</span><button class="btn sm alt" data-go="unlock">View courses</button></div></div>`:"";
   if(!all.length){el.innerHTML=`<div class="empty"><div class="big">${type==="video"?"🎬":"📄"}</div><b>No ${type==="video"?"videos":"PDF notes"} yet</b><br><span class="hi">${S.isOwner?"Open the Owner tab to add your first one.":"New classes will appear here soon."}</span></div>`;return}
   el.innerHTML=banner+(list.length?list.map(m=>itemHTML(m)).join(""):`<div class="empty">Nothing matches.</div>`);
 }
 function itemHTML(m,own){
   const v=m.type==="video",open=isOpen(m);
   return `<div class="item"><div class="thumb ${open?(v?"v":"p"):"l"}">${open?(v?"▶️":"📄"):"🔒"}</div><div class="meta"><b>${esc(m.title)}</b>
-  ${m.desc?`<small>${esc(m.desc)}</small><br>`:""}${m.source==="html"?`<span class="tag">HTML</span>`:m.source==="pdf"?`<span class="tag">PDF</span>`:""}${m.free?`<span class="tag f">FREE</span>`:`<span class="tag o">PREMIUM</span>`}<span class="tag">${esc(m.topic)}</span>
+  ${m.desc?`<small>${esc(m.desc)}</small><br>`:""}${m.source==="html"?`<span class="tag">HTML</span>`:m.source==="pdf"?`<span class="tag">PDF</span>`:""}${m.free?`<span class="tag f">FREE</span>`:courseNames(itemCourses(m)).map(n=>`<span class="tag c">${esc(n)}</span>`).join("")}<span class="tag">${esc(m.topic)}</span>
   <small> ${fmtSize(m.sizeBytes)}${m.sizeBytes?" · ":""}${fmtDate(m.createdAt)}</small></div>
-  <div style="display:flex;flex-direction:column;gap:6px">${open?`<button class="btn sm" data-open="${esc(m.id)}">${v?"Watch":"Open"}</button>`:`<button class="btn sm alt" data-go="unlock">🔒 Unlock</button>`}
-  ${own?`<button class="btn sm danger" data-del="${esc(m.id)}">Delete</button>`:""}</div></div>`;
+  <div style="display:flex;flex-direction:column;gap:6px">${open?`<button class="btn sm" data-open="${esc(m.id)}">${v?"Watch":"Open"}</button>`:`<button class="btn sm alt" data-go="unlock" data-course="${esc(itemCourses(m)[0])}">🔒 Unlock</button>`}
+  ${own&&!m.free&&S.courses.length?`<button class="btn sm ghost" data-editc="${esc(m.id)}">Courses</button>`:""}${own?`<button class="btn sm danger" data-del="${esc(m.id)}">Delete</button>`:""}</div></div>`;
 }
 document.addEventListener("click",e=>{
   const f=e.target.closest("[data-f]");if(f){filt[f.dataset.f]=f.dataset.t;renderLibrary(f.dataset.f)}
@@ -174,8 +186,9 @@ $("#qVideos").oninput=()=>renderLibrary("videos"); $("#qPdfs").oninput=()=>rende
 async function openItem(id){
   const m=S.materials.find(x=>x.id===id); if(!m) return;
   if(!isOpen(m)){go("unlock");return}
-  const loc=m.free?m:S.premium[id];
-  if(!loc){toast("Loading… try again in a moment");return}
+  let loc=m.free?m:S.premium[id];
+  if(!loc){try{const s=await S.fb.getDoc(S.fb.doc(S.fb.db,"premium",id));if(s.exists()){loc=s.data();S.premium[id]=loc}}catch(e){}}
+  if(!loc){toast("This lesson is locked for your account");go("unlock");return}
   $("#mTitle").textContent=m.title;
   $("#mBody").innerHTML=`<div class="empty">⏳ Opening…</div>`; $("#modal").classList.add("on");
   try{
@@ -245,30 +258,45 @@ $("#postNotice").onclick=async()=>{
 
 /* =================== premium card / unlock =================== */
 function renderPremium(){
-  const pc=$("#premiumCard"),c=S.payCfg;
-  if(S.isOwner) pc.innerHTML=`<div class="premium ok"><div class="spread"><div><b>Paid students: ${S.students.length}</b><div class="hi">Course price ₹${esc(c.price||"—")}${S.requests.length?` · <b style="color:var(--orange)">${S.requests.length} payment(s) to check</b>`:""}</div></div><button class="btn sm" data-go="owner">Manage</button></div></div>`;
-  else if(S.paid) pc.innerHTML=`<div class="premium ok"><b>⭐ Full course unlocked</b><div class="hi">सभी वीडियो और नोट्स उपलब्ध हैं — all videos & notes are open for you.</div></div>`;
-  else pc.innerHTML=`<div class="premium"><div class="spread"><div><b>🔒 Unlock full course</b><div class="hi">All video lectures + PDF notes${c.price?` · <b style="color:var(--orange)">₹${esc(c.price)}</b>`:""}</div></div><button class="btn sm alt" data-go="unlock">Unlock</button></div></div>`;
+  const pc=$("#premiumCard"),cl=courseList(),prices=cl.map(c=>+c.price).filter(x=>x>0),minP=prices.length?Math.min(...prices):0;
+  if(S.isOwner){pc.innerHTML=`<div class="premium ok"><div class="spread"><div><b>Paid students: ${S.students.length}</b><div class="hi">${S.courses.length?`${S.courses.length} course(s)`:`Course price ₹${esc(S.payCfg.price||"—")}`}${S.requests.length?` · <b style="color:var(--orange)">${S.requests.length} payment(s) to check</b>`:""}</div></div><button class="btn sm" data-go="owner">Manage</button></div></div>`;return}
+  const a=S.access;
+  if(a&&accessAll(a)){pc.innerHTML=`<div class="premium ok"><b>⭐ All courses unlocked</b><div class="hi">सभी वीडियो और नोट्स उपलब्ध हैं — everything is open for you.</div></div>`;return}
+  if(a){const mine=courseList().filter(c=>ownsCourse(c)).map(c=>c.name);const more=courseList().some(c=>!ownsCourse(c));
+    pc.innerHTML=`<div class="premium ok"><div class="spread"><div><b>⭐ Your courses</b><div class="hi">${esc(mine.join(" · ")||"Unlocked")}</div></div>${more?`<button class="btn sm ghost" data-go="unlock">More courses</button>`:""}</div></div>`;return}
+  pc.innerHTML=`<div class="premium"><div class="spread"><div><b>🔒 Unlock ${cl.length>1?"a course":"full course"}</b><div class="hi">Video lectures + PDF notes${minP?` · <b style="color:var(--orange)">${cl.length>1?"from ":""}₹${minP}</b>`:""}</div></div><button class="btn sm alt" data-go="unlock">${cl.length>1?"View courses":"Unlock"}</button></div></div>`;
+}
+function courseCards(selId,interactive){
+  return courseList().map(c=>{const owned=!S.isOwner&&ownsCourse(c),p=S.myPayments[c.id],on=c.id===selId;
+    const badge=owned?`<span class="pill">✓ Unlocked</span>`:p&&p.status==="pending"?`<span class="pill o">⏳ Verifying</span>`:p&&p.status==="rejected"?`<span class="pill r">Not verified</span>`:c.all&&courseList().length>1?`<span class="pill o">Best value</span>`:"";
+    return `<label class="ccard ${on?"on":""} ${owned?"owned":""}">${interactive?`<input type="radio" name="course" value="${esc(c.id)}" ${on?"checked":""}>`:""}
+      <div class="spread" style="align-items:flex-start"><div><b>${esc(c.name)}</b> ${badge}${c.desc?`<div class="hi" style="margin-top:2px">${esc(c.desc)}</div>`:""}${c.all&&!c.desc&&courseList().length>1?`<div class="hi" style="margin-top:2px">Includes every course & lesson</div>`:""}</div><div class="cp">${c.price?`₹${esc(c.price)}`:"—"}</div></div></label>`}).join("");
 }
 function renderUnlock(){
   const el=$("#unlockArea"), c=S.payCfg;
   if(!S.fb){el.innerHTML=`<div class="card">Payments will open soon.</div>`;return}
-  if(S.isOwner){el.innerHTML=`<div class="card">You're the owner — you already have full access. Students see the price and payment steps here once you fill in <b>Owner → Settings</b>.</div>`;return}
-  if(S.paid){el.innerHTML=`<div class="premium ok"><b>⭐ You're a premium student</b><p class="hi">Everything is unlocked. Happy studying!</p><div style="margin-top:8px"><button class="btn sm" data-go="videos">Go to videos</button></div></div>`;return}
-  if(!c.price&&!c.upi&&!c.link){el.innerHTML=`<div class="card">Course fee details will be posted soon. Check the notice board.</div>`;return}
-  const head=`<div class="card" style="text-align:center"><div class="hi">Full course fee</div><div class="price">₹${esc(c.price||"—")}</div>${c.note?`<p class="hi">${esc(c.note)}</p>`:""}</div>`;
-  if(!S.user){el.innerHTML=head+`<div class="card"><b>Step 1 · Sign in</b><div class="hi">Google account से साइन इन करें ताकि भुगतान के बाद आपका कोर्स खुल सके।</div><div style="margin-top:10px"><button class="btn" id="unlockSignIn">🔐 Sign in with Google</button></div></div>`;$("#unlockSignIn").onclick=signIn;return}
-  const p=S.myPayment;
-  const upiUrl=c.upi?`upi://pay?pa=${encodeURIComponent(c.upi)}&pn=${encodeURIComponent(c.name||"Harsh Nirwan Classes")}${c.price?`&am=${encodeURIComponent(c.price)}`:""}&cu=INR&tn=${encodeURIComponent("HNC course")}`:"";
+  const cl=courseList();
+  if(S.isOwner){el.innerHTML=`<div class="card">You're the owner — you have full access. This is how students see your courses:</div>`+courseCards(null,false);return}
+  if(S.access&&accessAll(S.access)){el.innerHTML=`<div class="premium ok"><b>⭐ All courses unlocked</b><p class="hi">Everything is open. Happy studying!</p><div style="margin-top:8px"><button class="btn sm" data-go="videos">Go to videos</button></div></div>`;return}
+  if(!cl.some(x=>+x.price>0)&&!c.upi){el.innerHTML=`<div class="card">Course fee details will be posted soon. Check the notice board.</div>`;return}
+  let sel=courseById(S.selCourse);
+  if(!sel||(!S.isOwner&&ownsCourse(sel)))sel=cl.find(x=>!ownsCourse(x))||cl[0];
+  S.selCourse=sel.id;
+  const head=`<div class="hi" style="margin-bottom:8px">${cl.length>1?"Choose a course · कोर्स चुनें":"Course fee"}</div>`+courseCards(sel.id,cl.length>1);
+  if(!S.user){el.innerHTML=head+`<div class="card"><b>Step 1 · Sign in</b><div class="hi">Google account से साइन इन करें ताकि भुगतान के बाद आपका कोर्स खुल सके।</div><div style="margin-top:10px"><button class="btn" id="unlockSignIn">🔐 Sign in with Google</button></div></div>`;$("#unlockSignIn").onclick=signIn;bindCourseRadios();return}
+  if(ownsCourse(sel)){el.innerHTML=head+`<div class="premium ok"><b>✓ You already have ${esc(sel.name)}</b><div style="margin-top:8px"><button class="btn sm" data-go="videos">Go to videos</button></div></div>`;bindCourseRadios();return}
+  const price=sel.price||"";
+  const p=S.myPayments[sel.id];
+  const upiUrl=c.upi?`upi://pay?pa=${encodeURIComponent(c.upi)}&pn=${encodeURIComponent(c.name||"Harsh Nirwan Classes")}${price?`&am=${encodeURIComponent(price)}`:""}&cu=INR&tn=${encodeURIComponent(("HNC "+sel.name).slice(0,40))}`:"";
   const wa=String(c.whatsapp||"").replace(/\D/g,"");
-  const waUrl=wa?`https://wa.me/${wa}?text=${encodeURIComponent(`Hello Harsh Nirwan Classes, I paid ₹${c.price||""} for the full course.\nName: ${S.user.displayName||""}\nEmail: ${S.user.email||""}\nUPI ref: ${p?.utr||""}`)}`:"";
+  const waUrl=wa?`https://wa.me/${wa}?text=${encodeURIComponent(`Hello Harsh Nirwan Classes, I paid ₹${price} for ${sel.name}.\nName: ${S.user.displayName||""}\nEmail: ${S.user.email||""}\nUPI ref: ${p?.utr||""}`)}`:"";
   let status="";
-  if(p&&p.status==="pending") status=`<div class="notice">⏳ <b>Payment submitted</b> (ref ${esc(p.utr)}). It will unlock automatically once verified — usually within a few hours.<small>भुगतान जाँच के बाद कोर्स अपने आप खुल जाएगा</small></div>`;
+  if(p&&p.status==="pending") status=`<div class="notice">⏳ <b>Payment submitted for ${esc(sel.name)}</b> (ref ${esc(p.utr)}). It will unlock automatically once verified — usually within a few hours.<small>भुगतान जाँच के बाद कोर्स अपने आप खुल जाएगा</small></div>`;
   if(p&&p.status==="rejected") status=`<div class="notice" style="border-color:var(--red);background:rgba(255,90,90,.1)">❌ We couldn't find this payment (ref ${esc(p.utr)}). Check the reference number and submit again, or contact us on WhatsApp.</div>`;
   el.innerHTML=head+status+`
-  <div class="card"><b>Step 1 · Pay</b><div class="hi">PhonePe / Google Pay / Paytm से भुगतान करें</div>
+  <div class="card"><b>Step 1 · Pay ${price?`₹${esc(price)}`:""} for ${esc(sel.name)}</b><div class="hi">PhonePe / Google Pay / Paytm से भुगतान करें</div>
    ${(S.qrImg||DEFAULT_QR||c.upi)?`<div class="qrwrap" style="text-align:center"><div class="qrbox" id="payQr"><div class="empty" style="padding:30px 0;color:#555">⏳</div></div>
-     <div style="font-weight:700">Scan & pay ${c.price?`<span style="color:var(--gold)">₹${esc(c.price)}</span>`:""}</div>
+     <div style="font-weight:700">Scan & pay ${price?`<span style="color:var(--gold)">₹${esc(price)}</span>`:""}</div>
      <div class="hi">Any UPI app · किसी भी UPI ऐप से स्कैन करें</div>
      <div class="hi" style="margin-top:6px">Paying from this same phone? Save the QR, then in your UPI app tap <b>Scan → Gallery</b>.</div>
      <div style="margin-top:8px"><a class="btn sm ghost" id="qrDl">⬇ Save QR to phone</a></div>
@@ -278,20 +306,23 @@ function renderUnlock(){
    :safeUrl(c.link)?`<div style="margin-top:10px"><a class="btn sm alt" href="${esc(c.link)}" target="_blank" rel="noopener">Pay online ↗</a></div>`:""}</div>
   <div class="card"><b>Step 2 · Submit payment details</b><div class="hi">UPI app में दिख रहा 12-अंकों का UTR / Reference नंबर डालें</div>
    <form id="payReq"><label class="f" for="prUtr">UPI ref / UTR / transaction ID</label><input class="in" id="prUtr" required minlength="6" maxlength="40" value="${esc(p&&p.status!=="approved"?p.utr:"")}">
-   <label class="f" for="prAmt">Amount paid (₹)</label><input class="in" id="prAmt" type="number" min="1" value="${esc(c.price||"")}">
+   <label class="f" for="prAmt">Amount paid (₹)</label><input class="in" id="prAmt" type="number" min="1" value="${esc(price)}">
    <label class="f" for="prPhone">Mobile number</label><input class="in" id="prPhone" type="tel" maxlength="15" value="${esc(p?.phone||"")}">
    <div class="row" style="margin-top:12px"><button class="btn alt">Submit for verification</button><span class="hi" id="prStatus"></span></div></form>
    ${waUrl?`<div class="hi" style="margin-top:10px">Faster? <a href="${esc(waUrl)}" target="_blank" rel="noopener" style="color:var(--green);font-weight:600">Send the screenshot on WhatsApp ↗</a> (+${esc(wa)})</div>`:""}</div>
-  <div class="card"><b>Step 3 · Start learning</b><div class="hi">Once verified, the full course unlocks automatically on this account.</div></div>`;
+  <div class="card"><b>Step 3 · Start learning</b><div class="hi">Once verified, ${esc(sel.name)} unlocks automatically on this account.</div></div>`;
   $("#payReq").onsubmit=submitPayment;
+  bindCourseRadios();
   fillQr(upiUrl);
 }
+function bindCourseRadios(){document.querySelectorAll('#unlockArea input[name="course"]').forEach(r=>r.onchange=()=>{S.selCourse=r.value;renderUnlock()})}
 async function submitPayment(e){
   e.preventDefault(); const st=$("#prStatus"); const {db,doc,setDoc,serverTimestamp}=S.fb;
   const utr=$("#prUtr").value.trim(); if(utr.length<6){st.textContent="Enter the full reference number.";return}
   st.textContent="Submitting…";
   try{
-    await setDoc(doc(db,"payments",S.user.uid),{uid:S.user.uid,name:(S.user.displayName||"").slice(0,80),email:(S.user.email||"").slice(0,120),
+    const sel=courseById(S.selCourse)||courseList()[0];
+    await setDoc(doc(db,"payments",S.user.uid+"_"+sel.id),{uid:S.user.uid,courseId:sel.id,courseName:String(sel.name||"").slice(0,80),name:(S.user.displayName||"").slice(0,80),email:(S.user.email||"").slice(0,120),
       phone:$("#prPhone").value.trim().slice(0,15),utr:utr.slice(0,40),amount:String($("#prAmt").value||"").slice(0,10),status:"pending",createdAt:serverTimestamp()});
     toast("Submitted — we'll verify and unlock soon");
   }catch(err){st.textContent="Could not submit: "+errMsg(err)}
@@ -329,6 +360,7 @@ $("#upForm").onsubmit=async e=>{
   const {db,doc,collection,setDoc,serverTimestamp,storage,ref,uploadBytesResumable}=S.fb;
   const st=$("#upStatus"),btn=$("#upBtn"),bar=$("#upBar");
   const src=document.querySelector('input[name="src"]:checked').value, free=$("#upFree").checked;
+  if(!free&&S.courses.some(c=>!c.all)&&!document.querySelector("#upCourses input:checked")){st.textContent="Choose at least one course, or tick Free preview.";return}
   let type,loc={},sizeBytes=0,source=src,pendingHtml=null,pendingPdf=null;
   if(src==="upload"){
     const f=upFile.files[0]; if(!f){st.textContent="Choose a file first.";return}
@@ -363,6 +395,7 @@ $("#upForm").onsubmit=async e=>{
     const mref=doc(collection(db,"materials"));
     const body={title:$("#upTitle").value.trim().slice(0,160)||"Untitled",desc:$("#upDesc").value.trim().slice(0,400),topic:$("#upTopic").value,exam:$("#upExam").value,
       type,free,source,sizeBytes,createdAt:serverTimestamp()};
+    if(!free){const cs=[...document.querySelectorAll("#upCourses input:checked")].map(i=>i.value);if(cs.length)body.courses=cs;}
     if(pendingHtml!==null) await setDoc(doc(db,"htmlnotes",mref.id),{html:pendingHtml});
     if(pendingPdf){ const parts=Math.ceil(pendingPdf.length/CHUNK); bar.style.display="block";
       for(let i=0;i<parts;i++){ st.textContent=`Uploading PDF… ${Math.round(i/parts*100)}%`; bar.firstElementChild.style.width=(i/parts*100)+"%";
@@ -371,6 +404,7 @@ $("#upForm").onsubmit=async e=>{
     if(free) Object.assign(body,loc); else await setDoc(doc(db,"premium",mref.id),loc);
     await setDoc(mref,body);
     toast(free?"Published as free preview":"Published — unlocked for paid students");
+    document.querySelectorAll("#upCourses input").forEach(i=>{i.checked=false});
     $("#upForm").reset();$("#drop").classList.remove("has");$("#dropTxt").innerHTML=`<b>Tap to choose a file</b><br><span class="hi">MP4 video or PDF notes</span>`;
     if(!USE_STORAGE)document.querySelector('input[name="src"][value="youtube"]').checked=true;showSrc();$("#dropP").classList.remove("has");$("#dropPTxt").innerHTML=`<b>Tap to choose a PDF</b><br><span class="hi">Up to 15 MB</span>`;$("#dropH").classList.remove("has");$("#dropHTxt").innerHTML=`<b>Tap to choose an HTML file</b><br><span class="hi">Notes, tables, quizzes — up to 900 KB.</span>`;st.textContent="";
   }catch(err){st.textContent="Could not publish: "+errMsg(err)}
@@ -380,16 +414,17 @@ $("#upForm").onsubmit=async e=>{
 /* =================== owner: payments & students =================== */
 function renderRequests(){
   $("#reqCount").textContent=S.requests.length?`(${S.requests.length})`:"";
-  $("#reqList").innerHTML=S.requests.length?S.requests.map(r=>`<div class="card"><div class="spread"><b>${esc(r.name||"Student")}</b><span class="pill">₹${esc(r.amount||"—")}</span></div>
+  $("#reqList").innerHTML=S.requests.length?S.requests.map(r=>`<div class="card"><div class="spread"><b>${esc(r.name||"Student")}</b><span class="pill">₹${esc(r.amount||"—")}</span></div><div style="margin-top:4px"><span class="tag c">${esc(r.courseName||courseById(r.courseId||LEGACY)?.name||"Full Course")}</span>${(()=>{const c=courseById(r.courseId||LEGACY);return c&&c.price&&r.amount&&+r.amount<+c.price?`<span class="tag" style="background:rgba(255,90,90,.14);color:#ff9a9a">Less than ₹${esc(c.price)}</span>`:""})()}</div>
     <div class="hi" style="margin:4px 0 8px">${esc(r.email)}${r.phone?" · "+esc(r.phone):""}<br>UPI ref: <b style="color:var(--ink)">${esc(r.utr)}</b> · ${fmtDate(r.createdAt)}</div>
     <div class="row"><button class="btn sm alt" data-approve="${esc(r.id)}">✅ Approve</button><button class="btn sm danger" data-reject="${esc(r.id)}">Reject</button></div></div>`).join("")
     :`<div class="empty"><div class="big">💸</div>No payments waiting.</div>`;
   renderPremium();
 }
 function renderStudents(){
-  $("#stuList").innerHTML=S.students.length?S.students.map(s=>`<div class="item"><div class="thumb p">⭐</div><div class="meta"><b>${esc(s.name||"Student")}</b>
-   <small>${esc(s.email||"")}${s.phone?" · "+esc(s.phone):""}<br>₹${esc(s.amount||"—")}${s.utr?" · Ref "+esc(s.utr):""} · ${fmtDate(s.approvedAt)}</small></div>
-   <button class="btn sm danger" data-revoke="${esc(s.id)}">Remove</button></div>`).join(""):`<div class="empty">No paid students yet.</div>`;
+  $("#stuList").innerHTML=S.students.length?S.students.map(s=>{const cs=accessAll(s)?[`<span class="tag c">All courses</span>`]:Object.keys(s.courses||{}).map(id=>`<span class="tag c">${esc(courseById(id)?.name||"Removed course")} <button data-rmc="${esc(s.id)}|${esc(id)}" title="Remove this course" style="color:#ff9a9a;margin-left:2px">×</button></span>`);
+   return `<div class="item"><div class="thumb p">⭐</div><div class="meta"><b>${esc(s.name||"Student")}</b>
+   <small>${esc(s.email||"")}${s.phone?" · "+esc(s.phone):""}<br>Last: ₹${esc(s.amount||"—")}${s.utr?" · Ref "+esc(s.utr):""} · ${fmtDate(s.approvedAt)}</small><div>${cs.join("")}</div></div>
+   <button class="btn sm danger" data-revoke="${esc(s.id)}">Remove all</button></div>`}).join(""):`<div class="empty">No paid students yet.</div>`;
   renderPremium();
 }
 document.addEventListener("click",e=>{
@@ -397,12 +432,15 @@ document.addEventListener("click",e=>{
   if(!S.fb||!S.isOwner)return; const {db,doc,setDoc,updateDoc,deleteDoc,serverTimestamp}=S.fb;
   if(a){const q=S.requests.find(x=>x.id===a.dataset.approve);if(!q)return;
     askConfirm(`Approve ${q.name||"this student"} (₹${q.amount||"?"}, ref ${q.utr})? Only approve after the money shows in your account.`,"Approve",async()=>{
-      try{await setDoc(doc(db,"access",q.id),{name:q.name||"",email:q.email||"",phone:q.phone||"",amount:q.amount||"",utr:q.utr||"",approvedAt:serverTimestamp()});
-        await updateDoc(doc(db,"payments",q.id),{status:"approved"});toast("Approved — course unlocked")}catch(err){toast("Failed: "+errMsg(err))}})}
+      try{const uid=q.uid||q.id,cid=q.courseId||LEGACY,c=courseById(cid),ex=S.students.find(s=>s.id===uid);
+        const body={name:q.name||"",email:q.email||"",phone:q.phone||"",amount:q.amount||"",utr:q.utr||"",approvedAt:serverTimestamp()};
+        if(cid===LEGACY||(c&&c.all)||(ex&&accessAll(ex)))body.all=true; else {body.courses={...((ex&&ex.courses)||{}),[cid]:true};}
+        await setDoc(doc(db,"access",uid),body,{merge:true});
+        await updateDoc(doc(db,"payments",q.id),{status:"approved"});toast("Approved — "+(c?c.name:"course")+" unlocked")}catch(err){toast("Failed: "+errMsg(err))}})}
   if(r){const q=S.requests.find(x=>x.id===r.dataset.reject);if(!q)return;
     askConfirm(`Reject payment ref ${q.utr} from ${q.name||"this student"}?`,"Reject",async()=>{try{await updateDoc(doc(db,"payments",q.id),{status:"rejected"});toast("Rejected")}catch(err){toast("Failed: "+errMsg(err))}})}
   if(v){const s=S.students.find(x=>x.id===v.dataset.revoke);if(!s)return;
-    askConfirm(`Remove access for ${s.name||"this student"}? Their premium content locks again.`,"Remove",async()=>{try{await deleteDoc(doc(db,"access",s.id));toast("Access removed")}catch(err){toast("Failed: "+errMsg(err))}})}
+    askConfirm(`Remove ALL course access for ${s.name||"this student"}? Their premium content locks again.`,"Remove",async()=>{try{await deleteDoc(doc(db,"access",s.id));toast("Access removed")}catch(err){toast("Failed: "+errMsg(err))}})}
 });
 
 /* =================== owner: settings =================== */
@@ -432,6 +470,55 @@ function renderQList(){
 document.addEventListener("click",e=>{const b=e.target.closest("[data-dq]");if(b&&S.isOwner)askConfirm("Delete this question?","Delete",async()=>{try{await S.fb.deleteDoc(S.fb.doc(S.fb.db,"questions",b.dataset.dq))}catch(err){toast("Failed: "+errMsg(err))}})});
 
 /* =================== render all =================== */
+/* =================== courses (owner) =================== */
+const SUGGESTED=[{name:"KVS / NVS PET Batch",price:"499",desc:"KVS & NVS PET/TGT Physical Education — videos, notes & tests"},{name:"DSSSB PET Batch",price:"399",desc:"DSSSB PET/TGT Physical Education — videos, notes & tests"},{name:"UGC NET PE Batch",price:"999",desc:"UGC NET Physical Education (Paper 2) — videos, notes & tests"},{name:"All-in-One Combo",price:"1299",desc:"Every course and every lesson — best value",all:true}];
+function renderCourseAdmin(){
+  if(!$("#cList"))return;
+  const cl=S.courses.slice().sort((x,y)=>(x.all?1:0)-(y.all?1:0)||(+x.price||0)-(+y.price||0));
+  $("#cList").innerHTML=cl.length?cl.map(c=>{const n=S.materials.filter(m=>!m.free&&itemCourses(m).includes(c.id)).length;
+    return `<div class="card"><div class="spread"><div><b>${esc(c.name)}</b> ${c.all?`<span class="pill o">All-in-One</span>`:""}<div class="hi">${c.all?"Unlocks every lesson":`${n} lesson(s)`}${c.desc?" · "+esc(c.desc):""}</div></div><div class="cp" style="font-weight:800;color:var(--gold)">₹${esc(c.price)}</div></div>
+    <div class="row" style="margin-top:8px"><button class="btn sm ghost" data-cedit="${esc(c.id)}">Edit</button><button class="btn sm danger" data-cdel="${esc(c.id)}">Delete</button></div></div>`}).join("")
+    :`<div class="empty">No courses yet. Until you add one, students see a single "Full Course" at your Settings price.</div>`;
+  $("#cSuggest").innerHTML=cl.length?"":`<div class="card"><b>Quick start</b><div class="hi">Create these 4 courses in one tap — you can edit names & prices after.</div><div class="hi" style="margin:6px 0">${SUGGESTED.map(s=>`${esc(s.name)} ₹${s.price}`).join(" · ")}</div><button class="btn sm alt" id="cAddSug">Add suggested courses</button></div>`;
+  const leg=S.materials.filter(m=>!m.free&&!(Array.isArray(m.courses)&&m.courses.length));
+  const opts=cl.filter(c=>!c.all);
+  $("#cLegacy").innerHTML=leg.length&&opts.length?`<div class="card"><b>${leg.length} older premium lesson(s) aren't in any course yet</b><div class="hi">Only "All-in-One" and earlier Full-Course students can open them. Move them into a course:</div>
+    <div class="row" style="margin-top:8px"><select class="in" id="cLegSel" style="flex:1">${opts.map(c=>`<option value="${esc(c.id)}">${esc(c.name)}</option>`).join("")}</select><button class="btn sm alt" id="cLegBtn">Move all</button></div></div>`:"";
+  const sb=$("#cAddSug");if(sb)sb.onclick=async()=>{sb.disabled=true;try{for(const s of SUGGESTED)await S.fb.addDoc(S.fb.collection(S.fb.db,"courses"),{...s,all:!!s.all,createdAt:S.fb.serverTimestamp()});toast("4 courses added")}catch(err){toast("Failed: "+errMsg(err));sb.disabled=false}};
+  const lb=$("#cLegBtn");if(lb)lb.onclick=async()=>{const cid=$("#cLegSel").value;lb.disabled=true;try{for(const m of leg)await S.fb.updateDoc(S.fb.doc(S.fb.db,"materials",m.id),{courses:[cid]});toast("Lessons moved")}catch(err){toast("Failed: "+errMsg(err))}lb.disabled=false};
+  renderUpCourses();
+}
+function renderUpCourses(){
+  const el=$("#upCourses");if(!el)return;const opts=S.courses.filter(c=>!c.all);
+  const prev=new Set([...el.querySelectorAll("input:checked")].map(i=>i.value));
+  el.innerHTML=opts.length?`<div class="cchk">${opts.map(c=>`<label><input type="checkbox" value="${esc(c.id)}">${esc(c.name)}</label>`).join("")}</div><div class="hi" style="margin-top:4px">All-in-One combo students get every lesson automatically.</div>`
+    :`<div class="hi">No courses yet — this lesson goes into the single "Full Course". Add courses in the Courses tab.</div>`;
+  el.querySelectorAll("input").forEach(i=>{i.checked=prev.has(i.value)});
+  $("#upCoursesWrap").style.display=$("#upFree").checked?"none":"block";
+}
+$("#upFree").addEventListener("change",renderUpCourses);
+function resetCForm(){$("#cForm").reset();$("#cId").value="";$("#cFormTitle").textContent="Add a course / batch";$("#cCancel").style.display="none";$("#cStatus").textContent=""}
+$("#cCancel").onclick=resetCForm;
+$("#cForm").onsubmit=async e=>{e.preventDefault();if(!S.isOwner)return;const {db,doc,collection,setDoc,updateDoc,serverTimestamp}=S.fb;
+  const body={name:$("#cName").value.trim().slice(0,80),price:String($("#cPrice").value||"").slice(0,8),desc:$("#cDesc").value.trim().slice(0,300),all:$("#cAll").checked};
+  if(!body.name||!body.price){$("#cStatus").textContent="Name and price are required.";return}
+  try{const id=$("#cId").value;if(id)await updateDoc(doc(db,"courses",id),body);else await setDoc(doc(collection(db,"courses")),{...body,createdAt:serverTimestamp()});toast(id?"Course updated":"Course added");resetCForm()}
+  catch(err){$("#cStatus").textContent="Could not save: "+errMsg(err)}};
+document.addEventListener("click",e=>{
+  const ed=e.target.closest("[data-cedit]");if(ed){const c=S.courses.find(x=>x.id===ed.dataset.cedit);if(!c)return;$("#cId").value=c.id;$("#cName").value=c.name||"";$("#cPrice").value=c.price||"";$("#cDesc").value=c.desc||"";$("#cAll").checked=!!c.all;$("#cFormTitle").textContent="Edit course";$("#cCancel").style.display="inline-flex";$("#cForm").scrollIntoView({behavior:"smooth",block:"center"})}
+  const dl=e.target.closest("[data-cdel]");if(dl){const c=S.courses.find(x=>x.id===dl.dataset.cdel);if(!c)return;
+    askConfirm(`Delete course "${c.name}"? Lessons stay, but students can't buy this course any more. Students who already bought it keep access only to lessons still in another course they own.`,"Delete",async()=>{try{await S.fb.deleteDoc(S.fb.doc(S.fb.db,"courses",c.id));toast("Course deleted")}catch(err){toast("Failed: "+errMsg(err))}})}
+  const ec=e.target.closest("[data-editc]");if(ec&&S.isOwner){const m=S.materials.find(x=>x.id===ec.dataset.editc);if(!m)return;const cur=new Set(itemCourses(m));
+    $("#mTitle").textContent="Courses for: "+m.title;
+    $("#mBody").innerHTML=`<div class="cchk">${S.courses.filter(c=>!c.all).map(c=>`<label><input type="checkbox" value="${esc(c.id)}" ${cur.has(c.id)?"checked":""}>${esc(c.name)}</label>`).join("")}</div><div class="row" style="margin-top:12px"><button class="btn alt" id="ecSave">Save</button></div>`;
+    $("#modal").classList.add("on");
+    $("#ecSave").onclick=async()=>{const sel=[...document.querySelectorAll("#mBody input:checked")].map(i=>i.value);if(!sel.length){toast("Pick at least one course");return}
+      try{await S.fb.updateDoc(S.fb.doc(S.fb.db,"materials",m.id),{courses:sel});closeModal();toast("Saved")}catch(err){toast("Failed: "+errMsg(err))}}}
+  const rc=e.target.closest("[data-rmc]");if(rc&&S.isOwner){const [uid,cid]=rc.dataset.rmc.split("|");const s=S.students.find(x=>x.id===uid);if(!s)return;
+    askConfirm(`Remove ${courseById(cid)?.name||"this course"} from ${s.name||"this student"}?`,"Remove",async()=>{const {db,doc,setDoc,deleteDoc}=S.fb;const cs={...(s.courses||{})};delete cs[cid];
+      try{if(!Object.keys(cs).length&&!s.all)await deleteDoc(doc(db,"access",uid));else{const {id,...rest}=s;await setDoc(doc(db,"access",uid),{...rest,courses:cs})}toast("Removed")}catch(err){toast("Failed: "+errMsg(err))}})}
+});
+
 /* =================== payment QR =================== */
 const DEFAULT_QR="payment-qr.png";
 let qrLibP=null;
@@ -519,7 +606,7 @@ document.addEventListener("click",async e=>{
     askConfirm(`Delete "${v.title}"?`,"Delete",async()=>{const {db,doc,deleteDoc}=S.fb;try{for(let i=0;i<(v.parts||0);i++)await deleteDoc(doc(db,"vacpdf",v.id,"parts",String(i)));await deleteDoc(doc(db,"vacancies",v.id));toast("Deleted")}catch(err){toast("Failed: "+errMsg(err))}})}
 });
 
-function renderAll(){renderVacancies();renderLibrary("videos");renderLibrary("pdfs");renderMine();renderStats();renderNotices();renderPremium();setRole();renderAcct();if($("#v-unlock").classList.contains("on"))renderUnlock()}
+function renderAll(){renderVacancies();if(S.isOwner)renderCourseAdmin();renderLibrary("videos");renderLibrary("pdfs");renderMine();renderStats();renderNotices();renderPremium();setRole();renderAcct();if($("#v-unlock").classList.contains("on"))renderUnlock()}
 
 /* =================== practice =================== */
 const QB=()=>BASE_QB.concat(S.questions.filter(q=>Array.isArray(q.options)&&q.options.length===4).map(q=>[q.topic,q.q,q.options,q.ans,q.exp||""]));
@@ -629,7 +716,7 @@ function clearUserListeners(){unsubs.forEach(u=>{try{u()}catch(e){}});unsubs=[]}
 
 async function onUser(user){
   const F=S.fb; clearUserListeners();
-  S.user=user; S.isOwner=false; S.paid=false; S.premium={}; S.myPayment=null; S.requests=[]; S.students=[];
+  S.user=user; S.isOwner=false; S.access=null; S.premium={}; S.myPayments={}; S.requests=[]; S.students=[];
   if(user){
     // Owner check: only the owner can read admin/ping (enforced by firestore.rules, so no email is stored in this public code)
     try{ await F.getDoc(F.doc(F.db,"admin","ping")); S.isOwner=true; }catch(e){ S.isOwner=false; }
@@ -641,14 +728,14 @@ async function onUser(user){
       unsubs.push(F.onSnapshot(F.query(F.collection(F.db,"payments"),F.where("status","==","pending")),s=>{S.requests=s.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>tsMs(b.createdAt)-tsMs(a.createdAt));renderRequests()},()=>{}));
       unsubs.push(F.onSnapshot(F.collection(F.db,"access"),s=>{S.students=s.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>tsMs(b.approvedAt)-tsMs(a.approvedAt));renderStudents()},()=>{}));
     }else{
-      let premUnsub=null;
+      let first=true;
       unsubs.push(F.onSnapshot(F.doc(F.db,"access",user.uid),s=>{
-        const was=S.paid; S.paid=s.exists();
-        if(S.paid&&!premUnsub){subPremium();premUnsub=unsubs[unsubs.length-1]; if(!was&&S.dbReady)toast("🎉 Payment verified — full course unlocked!")}
-        if(!S.paid&&premUnsub){premUnsub();premUnsub=null;S.premium={}}
-        renderAll();
+        const before=JSON.stringify(S.access&&{a:S.access.all,c:S.access.courses});
+        S.access=s.exists()?s.data():null; S.premium={};
+        if(!first&&S.access&&before!==JSON.stringify({a:S.access.all,c:S.access.courses}))toast("🎉 Payment verified — your course is unlocked!");
+        first=false; renderAll();
       },()=>{}));
-      unsubs.push(F.onSnapshot(F.doc(F.db,"payments",user.uid),s=>{S.myPayment=s.exists()?s.data():null;if($("#v-unlock").classList.contains("on"))renderUnlock()},()=>{}));
+      unsubs.push(F.onSnapshot(F.query(F.collection(F.db,"payments"),F.where("uid","==",user.uid)),s=>{S.myPayments={};s.docs.forEach(d=>{const x=d.data();const k=x.courseId||LEGACY;const prev=S.myPayments[k];if(!prev||tsMs(x.createdAt)>=tsMs(prev.createdAt))S.myPayments[k]=x});if($("#v-unlock").classList.contains("on"))renderUnlock()},()=>{}));
     }
   }
   renderAll(); renderRequests(); renderStudents(); renderQList();
@@ -666,6 +753,7 @@ async function initFirebase(){
   F.getRedirectResult(F.auth).catch(()=>{});
   // public data
   F.onSnapshot(F.query(F.collection(F.db,"materials"),F.orderBy("createdAt","desc")),s=>{S.materials=s.docs.map(d=>({id:d.id,...d.data()})).filter(m=>!m.hidden);S.dbReady=true;renderAll()},err=>{console.error(err);S.dbReady=true;renderAll()});
+  F.onSnapshot(F.collection(F.db,"courses"),s=>{S.courses=s.docs.map(d=>({id:d.id,...d.data()}));renderAll();renderCourseAdmin();renderRequests();renderStudents()},()=>{});
   F.onSnapshot(F.collection(F.db,"vacancies"),s=>{S.vacancies=s.docs.map(d=>({id:d.id,...d.data()}));renderVacancies()},()=>{});
   F.onSnapshot(F.query(F.collection(F.db,"notices"),F.orderBy("createdAt","desc"),F.limit(10)),s=>{S.notices=s.docs.map(d=>({id:d.id,...d.data()}));renderNotices()},()=>{});
   F.onSnapshot(F.doc(F.db,"config","qr"),s=>{S.qrImg=s.exists()&&typeof s.data().img==="string"&&s.data().img.startsWith("data:image/")?s.data().img:null;renderQrPreview();if($("#v-unlock").classList.contains("on"))renderUnlock()},()=>{});
