@@ -116,7 +116,7 @@ renderCountdown();
 /* =================== app state =================== */
 const S = {
   fb:null, user:null, isOwner:false, paid:false,
-  materials:[], premium:{}, notices:[], payCfg:{}, myPayment:null,
+  materials:[], premium:{}, notices:[], payCfg:{}, qrImg:null, myPayment:null,
   requests:[], students:[], questions:[], dbReady:false
 };
 let unsubs=[];   // listeners that depend on the signed-in user
@@ -264,9 +264,15 @@ function renderUnlock(){
   const waUrl=wa?`https://wa.me/${wa}?text=${encodeURIComponent(`Hello Harsh Nirwan Classes, I paid ₹${c.price||""} for the full course.\nName: ${S.user.displayName||""}\nEmail: ${S.user.email||""}\nUPI ref: ${p?.utr||""}`)}`:"";
   let status="";
   if(p&&p.status==="pending") status=`<div class="notice">⏳ <b>Payment submitted</b> (ref ${esc(p.utr)}). It will unlock automatically once verified — usually within a few hours.<small>भुगतान जाँच के बाद कोर्स अपने आप खुल जाएगा</small></div>`;
-  if(p&&p.status==="rejected") status=`<div class="notice" style="border-color:var(--red);background:#fdecec">❌ We couldn't find this payment (ref ${esc(p.utr)}). Check the reference number and submit again, or contact us on WhatsApp.</div>`;
+  if(p&&p.status==="rejected") status=`<div class="notice" style="border-color:var(--red);background:rgba(255,90,90,.1)">❌ We couldn't find this payment (ref ${esc(p.utr)}). Check the reference number and submit again, or contact us on WhatsApp.</div>`;
   el.innerHTML=head+status+`
   <div class="card"><b>Step 1 · Pay</b><div class="hi">PhonePe / Google Pay / Paytm से भुगतान करें</div>
+   ${(S.qrImg||c.upi)?`<div class="qrwrap" style="text-align:center"><div class="qrbox" id="payQr"><div class="empty" style="padding:30px 0;color:#555">⏳</div></div>
+     <div style="font-weight:700">Scan & pay ${c.price?`<span style="color:var(--gold)">₹${esc(c.price)}</span>`:""}</div>
+     <div class="hi">Any UPI app · किसी भी UPI ऐप से स्कैन करें</div>
+     <div class="hi" style="margin-top:6px">Paying from this same phone? Save the QR, then in your UPI app tap <b>Scan → Gallery</b>.</div>
+     <div style="margin-top:8px"><a class="btn sm ghost" id="qrDl">⬇ Save QR to phone</a></div>
+     ${c.upi?`<div class="hi" style="margin:12px 0 2px">— or pay to UPI ID —</div>`:""}</div>`:""}
    ${c.upi?`<div class="copyrow"><code>${esc(c.upi)}</code><button class="btn sm ghost" data-copy="${esc(c.upi)}">Copy</button></div>${c.name?`<div class="hi" style="margin-top:4px">Name: ${esc(c.name)}</div>`:""}
    <div class="row" style="margin-top:10px"><a class="btn sm" href="${esc(upiUrl)}">Open UPI app</a>${safeUrl(c.link)?`<a class="btn sm alt" href="${esc(c.link)}" target="_blank" rel="noopener">Pay online ↗</a>`:""}</div>`
    :safeUrl(c.link)?`<div style="margin-top:10px"><a class="btn sm alt" href="${esc(c.link)}" target="_blank" rel="noopener">Pay online ↗</a></div>`:""}</div>
@@ -278,6 +284,7 @@ function renderUnlock(){
    ${waUrl?`<div class="hi" style="margin-top:10px">Faster? <a href="${esc(waUrl)}" target="_blank" rel="noopener" style="color:var(--green);font-weight:600">Send the screenshot on WhatsApp ↗</a> (+${esc(wa)})</div>`:""}</div>
   <div class="card"><b>Step 3 · Start learning</b><div class="hi">Once verified, the full course unlocks automatically on this account.</div></div>`;
   $("#payReq").onsubmit=submitPayment;
+  fillQr(upiUrl);
 }
 async function submitPayment(e){
   e.preventDefault(); const st=$("#prStatus"); const {db,doc,setDoc,serverTimestamp}=S.fb;
@@ -425,6 +432,26 @@ function renderQList(){
 document.addEventListener("click",e=>{const b=e.target.closest("[data-dq]");if(b&&S.isOwner)askConfirm("Delete this question?","Delete",async()=>{try{await S.fb.deleteDoc(S.fb.doc(S.fb.db,"questions",b.dataset.dq))}catch(err){toast("Failed: "+errMsg(err))}})});
 
 /* =================== render all =================== */
+/* =================== payment QR =================== */
+let qrLibP=null;
+function loadQrLib(){if(qrLibP)return qrLibP;qrLibP=new Promise((res,rej)=>{const sc=document.createElement("script");sc.src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js";sc.onload=()=>res(window.qrcode);sc.onerror=()=>{qrLibP=null;rej(new Error("QR failed to load"))};document.head.appendChild(sc)});return qrLibP}
+async function upiQrDataUrl(upiUrl){const qrcode=await loadQrLib();const q=qrcode(0,"M");q.addData(upiUrl);q.make();return q.createDataURL(8,2)}
+function shrinkImage(file,max=700){return new Promise((res,rej)=>{const img=new Image();img.onload=()=>{const sc=Math.min(1,max/Math.max(img.width,img.height));const c=document.createElement("canvas");c.width=Math.round(img.width*sc);c.height=Math.round(img.height*sc);
+  const x=c.getContext("2d");x.fillStyle="#fff";x.fillRect(0,0,c.width,c.height);x.drawImage(img,0,0,c.width,c.height);let d=c.toDataURL("image/png");if(d.length>700000)d=c.toDataURL("image/jpeg",.9);URL.revokeObjectURL(img.src);res(d)};img.onerror=()=>rej(new Error("Not an image"));img.src=URL.createObjectURL(file)})}
+let qrPending=null;
+function renderQrPreview(){const el=$("#qrPreview");if(!el)return;const src=qrPending||S.qrImg;
+  el.innerHTML=src?`<div class="qrbox photo-qr" style="margin:0 0 10px"><img src="${esc(src)}" alt="Payment QR"></div>${qrPending?`<div class="hi">Not saved yet — tap <b>Save QR</b>.</div>`:`<div class="hi">✅ This QR is live on the Unlock page.</div>`}`:`<div class="hi">No QR uploaded yet.</div>`}
+$("#qrFile").onchange=async()=>{const f=$("#qrFile").files[0];if(!f)return;try{qrPending=await shrinkImage(f);$("#dropQ").classList.add("has");$("#dropQTxt").innerHTML=`<b>${esc(f.name)}</b>`;renderQrPreview()}catch(e){$("#qrStatus").textContent="That file isn't an image."}};
+$("#qrSave").onclick=async()=>{if(!S.isOwner||!qrPending){$("#qrStatus").textContent=qrPending?"":"Choose a QR image first.";return}
+  try{await S.fb.setDoc(S.fb.doc(S.fb.db,"config","qr"),{img:qrPending,updatedAt:S.fb.serverTimestamp()});qrPending=null;$("#dropQ").classList.remove("has");$("#dropQTxt").innerHTML=`<b>Tap to choose QR image</b><br><span class="hi">PNG / JPG screenshot</span>`;$("#qrStatus").textContent="";toast("QR saved — students can scan it now")}
+  catch(err){$("#qrStatus").textContent="Could not save: "+errMsg(err)}};
+$("#qrRemove").onclick=()=>{if(!S.isOwner)return;askConfirm("Remove your uploaded QR? The site will show an automatic QR from your UPI ID instead.","Remove",async()=>{try{await S.fb.deleteDoc(S.fb.doc(S.fb.db,"config","qr"));qrPending=null;toast("QR removed")}catch(err){toast("Failed: "+errMsg(err))}})};
+async function fillQr(upiUrl){const box=$("#payQr");if(!box)return;
+  if(S.qrImg){box.innerHTML=`<img src="${esc(S.qrImg)}" alt="Scan to pay">`;box.classList.add("photo-qr")}
+  else if(upiUrl){try{box.innerHTML=`<img src="${await upiQrDataUrl(upiUrl)}" alt="Scan to pay">`}catch(e){box.closest(".qrwrap").style.display="none"}}
+  else box.closest(".qrwrap").style.display="none";
+  const img=box.querySelector("img"),dl=$("#qrDl");if(img&&dl){dl.href=img.src;dl.download="HarshNirwanClasses-payment-QR."+(img.src.startsWith("data:image/jpeg")?"jpg":"png")}}
+
 /* =================== vacancies =================== */
 S.vacancies=[];
 const dayMs=864e5;
@@ -640,6 +667,7 @@ async function initFirebase(){
   F.onSnapshot(F.query(F.collection(F.db,"materials"),F.orderBy("createdAt","desc")),s=>{S.materials=s.docs.map(d=>({id:d.id,...d.data()})).filter(m=>!m.hidden);S.dbReady=true;renderAll()},err=>{console.error(err);S.dbReady=true;renderAll()});
   F.onSnapshot(F.collection(F.db,"vacancies"),s=>{S.vacancies=s.docs.map(d=>({id:d.id,...d.data()}));renderVacancies()},()=>{});
   F.onSnapshot(F.query(F.collection(F.db,"notices"),F.orderBy("createdAt","desc"),F.limit(10)),s=>{S.notices=s.docs.map(d=>({id:d.id,...d.data()}));renderNotices()},()=>{});
+  F.onSnapshot(F.doc(F.db,"config","qr"),s=>{S.qrImg=s.exists()&&typeof s.data().img==="string"&&s.data().img.startsWith("data:image/")?s.data().img:null;renderQrPreview();if($("#v-unlock").classList.contains("on"))renderUnlock()},()=>{});
   F.onSnapshot(F.doc(F.db,"config","pay"),s=>{S.payCfg=s.exists()?s.data():{};fillPayForm();renderPremium();if($("#v-unlock").classList.contains("on"))renderUnlock()},()=>{});
   F.onSnapshot(F.query(F.collection(F.db,"questions"),F.orderBy("createdAt","desc")),s=>{S.questions=s.docs.map(d=>({id:d.id,...d.data()}));renderPracticeChips();renderPractice();renderQList()},()=>{});
   F.onAuthStateChanged(F.auth,u=>onUser(u));

@@ -163,6 +163,9 @@ nav button.on svg.i{filter:drop-shadow(0 0 6px rgba(255,106,26,.7))}
 .vdates{display:flex;gap:14px;flex-wrap:wrap;margin:8px 0;font-size:.8rem;color:#cfe0d6}
 .vdates b{color:var(--ink)}
 .pill.o{background:var(--peach);color:var(--peachink)}.pill.r{background:rgba(255,90,90,.14);color:#ff9a9a}.pill.x{background:rgba(255,255,255,.07);color:var(--muted)}
+.qrbox{background:#fff;border-radius:16px;padding:12px;width:min(260px,80%);margin:12px auto 8px;box-shadow:0 0 30px rgba(255,106,26,.25)}
+.qrbox img{display:block;width:100%;height:auto;image-rendering:pixelated}
+.qrbox.photo-qr img{image-rendering:auto}
 .seo{font-size:.84rem;color:var(--muted)}
 .seo h3{font-size:.95rem;color:var(--ink);margin:8px 0 4px}
 footer{max-width:900px;margin:0 auto;padding:4px 16px 24px;font-size:.75rem;color:var(--muted);text-align:center}
@@ -429,6 +432,13 @@ footer{max-width:900px;margin:0 auto;padding:4px 16px 24px;font-size:.75rem;colo
           <label class="f" for="pNote">What's included</label><textarea class="in" id="pNote" rows="2" placeholder="e.g. All video lectures + PDF notes till exam"></textarea>
           <div class="row" style="margin-top:12px"><button class="btn">Save settings</button><span class="hi" id="payStatus"></span></div>
         </form>
+      </div>
+      <div class="card">
+        <b>Payment QR code</b><div class="hi">Upload the QR from PhonePe / Google Pay / Paytm / your bank app (screenshot is fine). Students scan it on the Unlock page.</div>
+        <div id="qrPreview" style="margin-top:10px"></div>
+        <label class="drop" id="dropQ"><input type="file" id="qrFile" accept="image/*" hidden><div style="font-size:1.6rem">🔳</div><div id="dropQTxt"><b>Tap to choose QR image</b><br><span class="hi">PNG / JPG screenshot</span></div></label>
+        <div class="row" style="margin-top:10px"><button class="btn alt" id="qrSave" type="button">Save QR</button><button class="btn sm danger" id="qrRemove" type="button">Remove QR</button><span class="hi" id="qrStatus"></span></div>
+        <p class="hi" style="margin-top:8px">No QR uploaded? The site makes one automatically from your UPI ID with the course price filled in.</p>
       </div>
     </div>
   </section>
