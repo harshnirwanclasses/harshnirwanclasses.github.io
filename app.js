@@ -783,6 +783,7 @@ function shareTest(id){const t=S.tests.find(x=>x.id===id);if(!t)return;const url
   $("#modal").classList.add("on");
   const ns=$("#nativeShare");if(ns)ns.onclick=()=>navigator.share({title:t.title,text:msg.replace("\n"+url,""),url}).catch(()=>{});
 }
+const goParam=new URLSearchParams(location.search).get("go");if(goParam&&/^(live|tests|vacancy|videos|pdfs|practice|unlock)$/.test(goParam))setTimeout(()=>go(goParam),50);
 let linkTest=new URLSearchParams(location.search).get("test")||((location.hash.match(/^#test-([\w-]+)$/)||[])[1])||null;
 function handleTestLink(){
   if(!linkTest||!S.tests.length)return;const t=S.tests.find(x=>x.id===linkTest);
@@ -819,7 +820,116 @@ async function showLeaderboard(tid){const t=S.tests.find(x=>x.id===tid);if(!t)re
     $("#mBody").innerHTML=list.length?`<div class="hi" style="margin-bottom:8px">${list.length} student(s) attempted${myIdx>=0?` · <b style="color:var(--gold)">Your rank: ${myIdx+1}</b>`:""}</div><table class="lb"><tr><th>#</th><th>Name</th><th>Score</th><th>Time</th></tr>${rows}${!S.isOwner&&myIdx>=10?`<tr class="me"><td>${myIdx+1}</td><td>${esc(list[myIdx].name)}</td><td><b>${list[myIdx].score}</b>/${list[myIdx].maxScore}</td><td>${clock(list[myIdx].taken||0)}</td></tr>`:""}</table>`:`<div class="empty">No attempts yet.</div>`;
   }catch(err){$("#mBody").innerHTML=`<div class="empty">Couldn't load (${esc(errMsg(err))}).</div>`}}
 
-function renderAll(){renderTests();if(S.isOwner)renderTestAdmin();renderVacancies();if(S.isOwner)renderCourseAdmin();renderLibrary("videos");renderLibrary("pdfs");renderMine();renderStats();renderNotices();renderPremium();setRole();renderAcct();if($("#v-unlock").classList.contains("on"))renderUnlock()}
+/* =================== LIVE CLASSES =================== */
+S.classes=[];S.clinks={};
+const JOIN_EARLY=10*60000, JOIN_LATE=30*60000;
+const clsEnd=c=>c.startAt+(c.duration||60)*60000;
+const clsLiveNow=c=>nowMs()>=c.startAt-JOIN_EARLY&&nowMs()<=clsEnd(c)+JOIN_LATE;
+const fmtDT=ms=>new Date(ms).toLocaleString("en-IN",{weekday:"short",day:"numeric",month:"short",hour:"numeric",minute:"2-digit"});
+function canJoin(c){return S.isOwner||c.courseId==="free"||hasCourse([c.courseId])}
+function gcalLink(c){const f=d=>new Date(d).toISOString().replace(/[-:]/g,"").replace(/\.\d{3}/,"");
+  return "https://calendar.google.com/calendar/render?action=TEMPLATE&text="+encodeURIComponent("Live class: "+c.title+" — Harsh Nirwan Classes")+"&dates="+f(c.startAt)+"/"+f(clsEnd(c))+"&details="+encodeURIComponent("Join at "+siteBase()+"?go=live")}
+function countdown(ms){const s=Math.max(0,Math.round((ms-nowMs())/1000)),d=Math.floor(s/86400),h=Math.floor(s%86400/3600),m=Math.floor(s%3600/60);return d?`${d}d ${h}h`:h?`${h}h ${m}m`:`${m}m ${s%60}s`}
+function classCard(c){
+  const ok=canJoin(c),live=clsLiveNow(c),past=nowMs()>clsEnd(c)+JOIN_LATE,started=nowMs()>=c.startAt&&nowMs()<=clsEnd(c);
+  let act;
+  if(c.cancelled)act=`<span class="pill r">Cancelled</span>`;
+  else if(!ok)act=`<button class="btn sm alt" data-go="unlock" data-course="${esc(c.courseId)}">🔒 Unlock to join</button>`;
+  else if(live)act=`<button class="btn sm alt" data-ljoin="${esc(c.id)}">${started?'<span class="livedot"></span>Join live':"Join now"}</button>`;
+  else if(past)act=c.hasRec?`<button class="btn sm" data-lrec="${esc(c.id)}">▶ Watch recording</button>`:`<span class="pill x">Ended</span>`;
+  else act=`<span class="pill o">⏳ ${countdown(c.startAt)}</span><a class="btn sm ghost" href="${esc(gcalLink(c))}" target="_blank" rel="noopener">📅 Add to calendar</a>`;
+  return `<div class="card ${started&&!c.cancelled?"livecard":""}"><div class="spread" style="align-items:flex-start"><div><b>${started&&!c.cancelled?'<span class="livedot"></span>':""}${esc(c.title)}</b><div class="hi">${fmtDT(c.startAt)} · ${c.duration||60} min</div></div><span class="tag ${c.courseId==="free"?"f":"c"}">${esc(c.courseId==="free"?"Free":(courseById(c.courseId)?.name||"Course"))}</span></div><div class="row" style="margin-top:10px">${act}</div></div>`;
+}
+function renderLive(){
+  const el=$("#liveList");if(!el)return;const cs=S.classes.slice().sort((x,y)=>x.startAt-y.startAt);
+  const now=cs.filter(c=>!c.cancelled&&clsLiveNow(c)),up=cs.filter(c=>c.startAt-JOIN_EARLY>nowMs()),past=cs.filter(c=>nowMs()>clsEnd(c)+JOIN_LATE).reverse();
+  el.innerHTML=(now.length?`<h2 style="font-size:1rem">🔴 Live now</h2>`+now.map(classCard).join(""):"")
+    +`<h2 style="font-size:1rem;margin-top:10px">Upcoming</h2>`+(up.length?up.slice(0,30).map(classCard).join(""):`<div class="card hi">No upcoming classes scheduled yet.</div>`)
+    +(past.length?`<h2 style="font-size:1rem;margin-top:10px">Past classes</h2>`+past.slice(0,30).map(classCard).join(""):"");
+  // home banner
+  const lb=$("#liveBanner");if(!lb)return;
+  const n=now[0]||up.find(c=>!c.cancelled);
+  if(!n){lb.innerHTML="";return}
+  const isLive=clsLiveNow(n)&&nowMs()>=n.startAt;
+  lb.innerHTML=`<div class="card ${isLive?"livecard":""}" style="padding:12px 14px"><div class="spread"><div style="min-width:0"><b style="font-size:.9rem">${isLive?'<span class="livedot"></span>LIVE NOW':"📅 Next live class"}</b><div class="hi" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(n.title)} · ${isLive?"started":fmtDT(n.startAt)}</div></div>${clsLiveNow(n)&&canJoin(n)?`<button class="btn sm alt" data-ljoin="${esc(n.id)}">Join</button>`:`<button class="btn sm ghost" data-go="live">${isLive?"View":countdown(n.startAt)}</button>`}</div></div>`;
+}
+setInterval(()=>{if(S.classes.length){renderLive();}},30000);
+async function getClassLink(id){if(S.clinks[id])return S.clinks[id];const s=await S.fb.getDoc(S.fb.doc(S.fb.db,"classlinks",id));const d=s.exists()?s.data():{};S.clinks[id]=d;return d}
+async function joinClass(id){const c=S.classes.find(x=>x.id===id);if(!c)return;
+  if(!canJoin(c)){S.selCourse=c.courseId;go("unlock");return}
+  if(c.courseId!=="free"&&!S.user){signIn();return}
+  let d;try{d=await getClassLink(id)}catch(e){toast("Couldn't load the class link");return}
+  if(!d.url){toast("The teacher hasn't added the link yet — try again in a minute");delete S.clinks[id];return}
+  if(S.user&&!S.isOwner){try{await S.fb.setDoc(S.fb.doc(S.fb.db,"att",id+"_"+S.user.uid),{cid:id,uid:S.user.uid,name:(S.user.displayName||"").slice(0,60),email:(S.user.email||"").slice(0,120),at:S.fb.serverTimestamp()})}catch(e){}}
+  const yt=ytId(d.url);
+  if(yt){$("#mTitle").textContent="🔴 "+c.title;$("#mBody").innerHTML=`<iframe class="yt" src="https://www.youtube-nocookie.com/embed/${yt}?autoplay=1&rel=0" allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen title="${esc(c.title)}"></iframe><div class="row" style="margin-top:10px"><a class="btn sm ghost" href="${esc(d.url)}" target="_blank" rel="noopener">Open in YouTube (for live chat) ↗</a></div>`;$("#modal").classList.add("on")}
+  else{const u=safeUrl(d.url);if(!u){toast("Invalid class link");return}window.open(u,"_blank","noopener")||(location.href=u)}
+}
+async function watchRec(id){const c=S.classes.find(x=>x.id===id);if(!c)return;if(!canJoin(c)){S.selCourse=c.courseId;go("unlock");return}
+  let d;try{d=await getClassLink(id)}catch(e){toast("Couldn't load recording");return}
+  const yt=ytId(d.rec||"");$("#mTitle").textContent="▶ "+c.title;
+  $("#mBody").innerHTML=yt?`<iframe class="yt" src="https://www.youtube-nocookie.com/embed/${yt}?rel=0" allow="encrypted-media; picture-in-picture; fullscreen" allowfullscreen title="${esc(c.title)}"></iframe>`:safeUrl(d.rec)?`<a class="btn" href="${esc(d.rec)}" target="_blank" rel="noopener">Open recording ↗</a>`:`<div class="empty">Recording not available.</div>`;$("#modal").classList.add("on")}
+document.addEventListener("click",e=>{const j=e.target.closest("[data-ljoin]");if(j)joinClass(j.dataset.ljoin);const r=e.target.closest("[data-lrec]");if(r)watchRec(r.dataset.lrec)});
+/* owner */
+function renderLiveAdmin(){const el=$("#lAdmin");if(!el)return;
+  const sel=$("#lCourse");if(sel){const v=sel.value;sel.innerHTML=`<option value="free">Free — everyone</option>`+courseList().map(c=>`<option value="${esc(c.id)}">${esc(c.name)}</option>`).join("");if(v)sel.value=v}
+  const cs=S.classes.slice().sort((x,y)=>y.startAt-x.startAt);
+  el.innerHTML=cs.length?cs.slice(0,60).map(c=>`<div class="card"><div class="spread" style="align-items:flex-start"><div><b>${esc(c.title)}</b>${c.cancelled?` <span class="pill r">Cancelled</span>`:""}<div class="hi">${fmtDT(c.startAt)} · ${c.duration} min · ${esc(c.courseId==="free"?"Free":(courseById(c.courseId)?.name||"Course"))}</div></div></div>
+    <div class="row" style="margin-top:8px"><button class="btn sm ghost" data-lset="${esc(c.id)}">🔗 Link / recording</button><button class="btn sm ghost" data-latt="${esc(c.id)}">👥 Attendance</button><button class="btn sm ghost" data-lcan="${esc(c.id)}">${c.cancelled?"Restore":"Cancel"}</button><button class="btn sm danger" data-ldel="${esc(c.id)}">Delete</button></div></div>`).join(""):`<div class="empty">No classes scheduled.</div>`}
+$("#lForm").onsubmit=async e=>{e.preventDefault();if(!S.isOwner)return;const st=$("#lStatus"),btn=$("#lBtn");
+  const sv=$("#lStart").value;if(!sv){st.textContent="Pick date & time.";return}
+  const link=$("#lLink").value.trim();if(link&&!safeUrl(link)){st.textContent="Link must start with https://";return}
+  const rep=$("#lRepeat").value,times=rep==="none"?1:Math.min(30,Math.max(1,+$("#lTimes").value||1));
+  const first=new Date(sv);const dates=[];let d=new Date(first);
+  while(dates.length<times){if(rep!=="monsat"||d.getDay()!==0)dates.push(d.getTime());d=new Date(d);d.setDate(d.getDate()+(rep==="weekly"?7:1));if(rep==="none")break}
+  const {db,doc,collection,setDoc,serverTimestamp}=S.fb;btn.disabled=true;
+  try{for(let i=0;i<dates.length;i++){st.textContent=`Scheduling ${i+1}/${dates.length}…`;const ref=doc(collection(db,"classes"));
+      await setDoc(doc(db,"classlinks",ref.id),{url:link,rec:""});
+      await setDoc(ref,{title:$("#lTitle").value.trim().slice(0,120),courseId:$("#lCourse").value,duration:Math.min(300,Math.max(10,+$("#lDur").value||60)),startAt:dates[i],hasRec:false,cancelled:false,createdAt:serverTimestamp()})}
+    $("#lForm").reset();st.textContent="";toast(dates.length>1?`${dates.length} classes scheduled`:"Class scheduled")}
+  catch(err){st.textContent="Could not schedule: "+errMsg(err)}btn.disabled=false};
+document.addEventListener("click",async e=>{if(!S.isOwner)return;const {db,doc,updateDoc,deleteDoc,setDoc,getDoc,getDocs,query,collection,where}=S.fb||{};
+  const s=e.target.closest("[data-lset]");if(s){const c=S.classes.find(x=>x.id===s.dataset.lset);if(!c)return;let d={};try{const x=await getDoc(doc(db,"classlinks",c.id));d=x.exists()?x.data():{}}catch(_){}
+    $("#mTitle").textContent="🔗 "+c.title;
+    $("#mBody").innerHTML=`<label class="f" for="lsUrl">Live class link</label><input class="in" id="lsUrl" value="${esc(d.url||"")}" placeholder="https://youtube.com/live/… or https://meet.google.com/…">
+      <label class="f" for="lsRec">Recording link (YouTube, after class)</label><input class="in" id="lsRec" value="${esc(d.rec||"")}" placeholder="https://youtu.be/…">
+      <label class="chk" style="border:0"><input type="checkbox" id="lsVid" ${c.recLesson?"disabled":""}><span>Also add the recording to <b>Videos</b> ${c.recLesson?"(already added)":""}</span></label>
+      <div class="row" style="margin-top:10px"><button class="btn alt" id="lsSave">Save</button></div>`;
+    $("#modal").classList.add("on");
+    $("#lsSave").onclick=async()=>{const url=$("#lsUrl").value.trim(),rec=$("#lsRec").value.trim();if((url&&!safeUrl(url))||(rec&&!safeUrl(rec))){toast("Links must start with https://");return}
+      try{await setDoc(doc(db,"classlinks",c.id),{url,rec});const up={hasRec:!!rec};
+        if(rec&&$("#lsVid").checked&&!c.recLesson){const mref=doc(collection(db,"materials"));const free=c.courseId==="free";
+          const body={title:c.title+" (Live class recording)",desc:"Recorded on "+fmtDT(c.startAt),topic:"General / Others",exam:"Other / All exams",type:"video",free,source:"youtube",sizeBytes:0,createdAt:S.fb.serverTimestamp()};
+          if(free)body.url=rec;else{body.courses=[c.courseId];await setDoc(doc(db,"premium",mref.id),{url:rec})}
+          await setDoc(mref,body);up.recLesson=mref.id}
+        await updateDoc(doc(db,"classes",c.id),up);delete S.clinks[c.id];closeModal();toast("Saved")}catch(err){toast("Failed: "+errMsg(err))}}}
+  const at=e.target.closest("[data-latt]");if(at){const c=S.classes.find(x=>x.id===at.dataset.latt);if(!c)return;$("#mTitle").textContent="👥 "+c.title;$("#mBody").innerHTML=`<div class="empty">Loading…</div>`;$("#modal").classList.add("on");
+    try{const s2=await getDocs(query(collection(db,"att"),where("cid","==",c.id)));const l=s2.docs.map(x=>x.data()).sort((a,b)=>tsMs(a.at)-tsMs(b.at));
+      $("#mBody").innerHTML=l.length?`<div class="hi" style="margin-bottom:6px">${l.length} student(s) joined</div><table class="lb"><tr><th>#</th><th>Name</th><th>Joined</th></tr>${l.map((x,i)=>`<tr><td>${i+1}</td><td>${esc(x.name||x.email||"Student")}<br><small class="hi">${esc(x.email||"")}</small></td><td>${x.at?new Date(tsMs(x.at)).toLocaleTimeString("en-IN",{hour:"numeric",minute:"2-digit"}):""}</td></tr>`).join("")}</table>`:`<div class="empty">Nobody has joined yet.</div>`}catch(err){$("#mBody").innerHTML=`<div class="empty">Couldn't load (${esc(errMsg(err))})</div>`}}
+  const cn=e.target.closest("[data-lcan]");if(cn){const c=S.classes.find(x=>x.id===cn.dataset.lcan);if(c)try{await updateDoc(doc(db,"classes",c.id),{cancelled:!c.cancelled});toast(c.cancelled?"Class restored":"Class cancelled")}catch(err){toast("Failed: "+errMsg(err))}}
+  const dl=e.target.closest("[data-ldel]");if(dl){const c=S.classes.find(x=>x.id===dl.dataset.ldel);if(c)askConfirm(`Delete "${c.title}" (${fmtDT(c.startAt)})?`,"Delete",async()=>{try{await deleteDoc(doc(db,"classlinks",c.id));await deleteDoc(doc(db,"classes",c.id));toast("Deleted")}catch(err){toast("Failed: "+errMsg(err))}})}
+});
+
+/* =================== VISITOR COUNT =================== */
+S.stats={};
+const dayKey=(d=new Date())=>"d_"+d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
+async function countVisit(){
+  if(!S.fb||!S.fb.increment)return;const k=dayKey();
+  if(LS.get("owner",0)||LS.get("visited",null)===k)return;LS.set("visited",k);
+  const {db,doc,updateDoc,setDoc,increment}=S.fb;
+  for(const id of [k,"total"]){try{await updateDoc(doc(db,"stats",id),{n:increment(1)})}catch(e){try{await setDoc(doc(db,"stats",id),{n:1})}catch(_){}}}
+}
+function renderVisitors(){const el=$("#visCount");if(!el)return;const t=S.stats.total?.n||0,td=S.stats[dayKey()]?.n||0;el.innerHTML=t?`👀 <b>${t.toLocaleString("en-IN")}</b> visitors · ${td.toLocaleString("en-IN")} today`:""}
+async function renderVisitorStats(){const el=$("#statsArea");if(!el||!S.isOwner)return;
+  const days=[...Array(30)].map((_,i)=>{const d=new Date();d.setDate(d.getDate()-i);return d});
+  const v=d=>S.stats[dayKey(d)]?.n||0;const last7=days.slice(0,7).reverse(),max=Math.max(1,...last7.map(v));
+  let users="…";try{if(S.fb.getCountFromServer){const c=await S.fb.getCountFromServer(S.fb.collection(S.fb.db,"users"));users=c.data().count}else{const s=await S.fb.getDocs(S.fb.collection(S.fb.db,"users"));users=s.docs.length}}catch(e){users="—"}
+  el.innerHTML=`<div class="rstats"><div><b>${v(days[0])}</b><span>Today</span></div><div><b>${v(days[1])}</b><span>Yesterday</span></div><div><b>${days.slice(0,7).reduce((s,d)=>s+v(d),0)}</b><span>Last 7 days</span></div><div><b>${days.reduce((s,d)=>s+v(d),0)}</b><span>Last 30 days</span></div><div><b>${(S.stats.total?.n||0).toLocaleString("en-IN")}</b><span>All-time visitors</span></div><div><b>${users}</b><span>Signed-up students</span></div></div>
+   <div class="card"><b>Visitors — last 7 days</b><div class="bars">${last7.map(d=>`<div><b>${v(d)}</b><i style="height:${Math.round(v(d)/max*100)}%"></i>${d.toLocaleDateString("en-IN",{weekday:"short"})}</div>`).join("")}</div></div>
+   <div class="card"><div class="spread"><b>Paid students</b><span class="pill">${S.students.length}</span></div><div class="hi" style="margin-top:6px">A visitor is counted once per phone/browser per day. Your own visits as owner are not counted.</div></div>`}
+document.addEventListener("click",e=>{const b=e.target.closest('[data-pane="pStats"]');if(b)renderVisitorStats()});
+
+function renderAll(){renderLive();if(S.isOwner)renderLiveAdmin();renderTests();if(S.isOwner)renderTestAdmin();renderVacancies();if(S.isOwner)renderCourseAdmin();renderLibrary("videos");renderLibrary("pdfs");renderMine();renderStats();renderNotices();renderPremium();setRole();renderAcct();if($("#v-unlock").classList.contains("on"))renderUnlock()}
 
 /* =================== practice =================== */
 let BANK=[];
@@ -936,7 +1046,7 @@ async function onUser(user){
   S.user=user; S.isOwner=false; S.access=null; S.premium={}; S.myPayments={}; S.myAttempts={}; S.requests=[]; S.students=[];
   if(user){
     // Owner check: only the owner can read admin/ping (enforced by firestore.rules, so no email is stored in this public code)
-    try{ await F.getDoc(F.doc(F.db,"admin","ping")); S.isOwner=true; }catch(e){ S.isOwner=false; }
+    try{ await F.getDoc(F.doc(F.db,"admin","ping")); S.isOwner=true; LS.set("owner",1); }catch(e){ S.isOwner=false; }
     // remember the student (profile)
     if(!S.isOwner){ try{ await F.setDoc(F.doc(F.db,"users",user.uid),{name:(user.displayName||"").slice(0,80),email:(user.email||"").slice(0,120),lastSeen:F.serverTimestamp()},{merge:true}); }catch(e){} }
     const subPremium=()=>unsubs.push(F.onSnapshot(F.collection(F.db,"premium"),s=>{S.premium={};s.docs.forEach(d=>S.premium[d.id]=d.data());renderAll()},()=>{}));
@@ -972,6 +1082,9 @@ async function initFirebase(){
   F.getRedirectResult(F.auth).catch(()=>{});
   // public data
   F.onSnapshot(F.query(F.collection(F.db,"materials"),F.orderBy("createdAt","desc")),s=>{S.materials=s.docs.map(d=>({id:d.id,...d.data()})).filter(m=>!m.hidden);S.dbReady=true;renderAll()},err=>{console.error(err);S.dbReady=true;renderAll()});
+  F.onSnapshot(F.collection(F.db,"classes"),s=>{S.classes=s.docs.map(d=>({id:d.id,...d.data()}));renderLive();if(S.isOwner)renderLiveAdmin()},()=>{});
+  F.onSnapshot(F.collection(F.db,"stats"),s=>{S.stats={};s.docs.forEach(d=>S.stats[d.id]=d.data());renderVisitors();if(S.isOwner&&$("#pStats").classList.contains("on"))renderVisitorStats()},()=>{});
+  setTimeout(countVisit,1500);
   F.onSnapshot(F.collection(F.db,"tests"),s=>{S.tests=s.docs.map(d=>({id:d.id,...d.data()}));renderTests();if(S.isOwner)renderTestAdmin();handleTestLink()},()=>{});
   F.onSnapshot(F.collection(F.db,"courses"),s=>{S.courses=s.docs.map(d=>({id:d.id,...d.data()}));renderAll();renderCourseAdmin();renderRequests();renderStudents()},()=>{});
   F.onSnapshot(F.collection(F.db,"vacancies"),s=>{S.vacancies=s.docs.map(d=>({id:d.id,...d.data()}));renderVacancies()},()=>{});

@@ -197,6 +197,13 @@ nav button.on svg.i{filter:drop-shadow(0 0 6px rgba(255,106,26,.7))}
 .bankq{display:flex;gap:8px;align-items:flex-start;padding:8px 0;border-bottom:1px solid var(--line);font-size:.84rem}
 .bankq input{margin-top:3px;accent-color:var(--orange);flex:none;width:18px;height:18px}
 body.intest header,body.intest footer{display:none}
+.livedot{display:inline-block;width:9px;height:9px;border-radius:50%;background:#ff3b3b;box-shadow:0 0 0 0 rgba(255,59,59,.7);animation:pulse 1.4s infinite;margin-right:6px;vertical-align:1px}
+@keyframes pulse{0%{box-shadow:0 0 0 0 rgba(255,59,59,.7)}70%{box-shadow:0 0 0 10px rgba(255,59,59,0)}100%{box-shadow:0 0 0 0 rgba(255,59,59,0)}}
+.livecard{border:1.5px solid rgba(255,59,59,.55);background:linear-gradient(135deg,rgba(255,59,59,.14),rgba(255,106,26,.06))}
+.bars{display:flex;align-items:flex-end;gap:6px;height:120px;margin-top:10px}
+.bars div{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%;font-size:.65rem;color:var(--muted)}
+.bars i{display:block;width:100%;border-radius:6px 6px 2px 2px;background:linear-gradient(var(--orange),#ff4500);min-height:2px}
+.bars b{font-size:.7rem;color:var(--ink);margin-bottom:2px}
 .seo{font-size:.84rem;color:var(--muted)}
 .seo h3{font-size:.95rem;color:var(--ink);margin:8px 0 4px}
 footer{max-width:900px;margin:0 auto;padding:4px 16px 24px;font-size:.75rem;color:var(--muted);text-align:center}
@@ -265,6 +272,7 @@ footer{max-width:900px;margin:0 auto;padding:4px 16px 24px;font-size:.75rem;colo
 
   <!-- HOME -->
   <section class="view on" id="v-home">
+    <div id="liveBanner"></div>
     <div id="premiumCard"></div>
     <div class="stat">
       <div><b id="sVideos">0</b><span>Video lectures</span></div>
@@ -311,6 +319,7 @@ footer{max-width:900px;margin:0 auto;padding:4px 16px 24px;font-size:.75rem;colo
       <button class="tile" data-go="tests"><div class="ic g"><svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2.5M10 2h4M12 2v3"/></svg></div><b>Test series</b><span>Full tests with rank</span></button>
       <button class="tile" data-go="syllabus"><div class="ic"><svg class="i" viewBox="0 0 24 24"><path d="M4 19V5a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0-2 2zm0 0a2 2 0 0 0 2 2h13"/><path d="M8 7h7"/></svg></div><b>Syllabus</b><span>Track topics</span></button>
       <button class="tile" data-go="planner"><div class="ic g"><svg class="i" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4M8 15h3"/></svg></div><b>Daily planner</b><span>Today's targets</span></button>
+      <button class="tile" data-go="live"><div class="ic"><svg class="i" viewBox="0 0 24 24"><rect x="2" y="6" width="14" height="12" rx="3"/><path d="m16 10 6-3v10l-6-3"/></svg></div><b>Live classes</b><span>Schedule & recordings</span></button>
       <button class="tile" data-go="vacancy"><div class="ic"><svg class="i" viewBox="0 0 24 24"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.9 1.9 0 0 0 3.4 0"/></svg></div><b>Vacancies</b><span>Official notifications</span></button>
     </div>
     <div class="card seo" style="margin-top:14px">
@@ -369,6 +378,8 @@ footer{max-width:900px;margin:0 auto;padding:4px 16px 24px;font-size:.75rem;colo
       <button data-pane="pReq">Payments <span id="reqCount"></span></button>
       <button data-pane="pStu">Students</button>
       <button data-pane="pTests">Tests</button>
+      <button data-pane="pLive">Live</button>
+      <button data-pane="pStats">Stats</button>
       <button data-pane="pQ">Questions</button>
       <button data-pane="pPay">Settings</button>
     </div>
@@ -461,6 +472,33 @@ footer{max-width:900px;margin:0 auto;padding:4px 16px 24px;font-size:.75rem;colo
       <div id="stuList"></div>
     </div>
 
+    <div class="pane" id="pLive">
+      <div class="card">
+        <b>Schedule a live class</b><div class="hi">Go live on YouTube (set to Unlisted) or start a Google Meet / Zoom, and paste the link here.</div>
+        <form id="lForm">
+          <label class="f" for="lTitle">Class topic</label><input class="in" id="lTitle" required maxlength="120" placeholder="e.g. Sports Training – Periodization (Live)">
+          <div class="row">
+            <div style="flex:1;min-width:150px"><label class="f" for="lCourse">Who can join</label><select class="in" id="lCourse"></select></div>
+            <div style="flex:1;min-width:120px"><label class="f" for="lDur">Duration (min)</label><input class="in" id="lDur" type="number" min="10" max="300" value="60"></div>
+          </div>
+          <label class="f" for="lStart">Date & time</label><input class="in" id="lStart" type="datetime-local" required>
+          <label class="f" for="lLink">Class link (YouTube Live / Meet / Zoom)</label><input class="in" id="lLink" maxlength="300" placeholder="https://youtube.com/live/… or https://meet.google.com/…">
+          <div class="hi">You can leave the link empty now and add it just before class.</div>
+          <div class="row">
+            <div style="flex:1;min-width:150px"><label class="f" for="lRepeat">Repeat</label><select class="in" id="lRepeat"><option value="none">Just once</option><option value="daily">Every day</option><option value="monsat">Mon–Sat</option><option value="weekly">Every week</option></select></div>
+            <div style="flex:1;min-width:120px"><label class="f" for="lTimes">How many classes</label><input class="in" id="lTimes" type="number" min="1" max="30" value="1"></div>
+          </div>
+          <div class="row" style="margin-top:12px"><button class="btn alt" id="lBtn">Schedule</button><span class="hi" id="lStatus"></span></div>
+        </form>
+      </div>
+      <h2>Your classes</h2>
+      <div id="lAdmin"></div>
+    </div>
+
+    <div class="pane" id="pStats">
+      <div id="statsArea"><div class="empty">Loading…</div></div>
+    </div>
+
     <div class="pane" id="pTests">
       <div class="card">
         <b>Create a test</b><div class="hi">Pick questions from your question bank (built-in + your own). Add more questions in the Questions tab.</div>
@@ -529,6 +567,11 @@ footer{max-width:900px;margin:0 auto;padding:4px 16px 24px;font-size:.75rem;colo
     <div class="chips" id="cPractice"></div><div class="card" id="pCard"></div>
   </section>
 
+  <section class="view" id="v-live">
+    <h2>Live classes</h2><p class="hi sub">लाइव क्लास — join 10 minutes before start</p>
+    <div id="liveList"></div>
+  </section>
+
   <section class="view" id="v-tests">
     <h2>Test series</h2><p class="hi sub">टेस्ट सीरीज़ — real exam pattern, rank & analysis</p>
     <div id="testList"></div>
@@ -558,7 +601,7 @@ footer{max-width:900px;margin:0 auto;padding:4px 16px 24px;font-size:.75rem;colo
     <div class="card"><b>Mock test history</b><div id="hist" class="hi" style="margin-top:6px">No mock tests yet.</div></div>
   </section>
 </main>
-<footer>© Harsh Nirwan Classes · Physical Education coaching</footer>
+<footer><div id="visCount" style="margin-bottom:4px"></div>© Harsh Nirwan Classes · Physical Education coaching</footer>
 
 <nav>
   <button data-go="home" class="on"><svg class="i" viewBox="0 0 24 24"><path d="M3 11 12 4l9 7"/><path d="M5 10v10h14V10"/><path d="M10 20v-6h4v6"/></svg>Home</button>
