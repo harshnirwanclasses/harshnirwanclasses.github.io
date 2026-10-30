@@ -334,7 +334,7 @@ footer{max-width:900px;margin:0 auto;padding:4px 16px 24px;font-size:.75rem;colo
   </section>
 
   <section class="view" id="v-unlock">
-    <h2>Unlock full course</h2><p class="hi sub">पूरा कोर्स अनलॉक करें</p>
+    <h2>Courses &amp; fees</h2><p class="hi sub">कोर्स चुनें, भुगतान करें और पढ़ाई शुरू करें</p>
     <div id="unlockArea"></div>
   </section>
 
@@ -414,6 +414,10 @@ footer{max-width:900px;margin:0 auto;padding:4px 16px 24px;font-size:.75rem;colo
           <label class="f" for="cName">Course name</label><input class="in" id="cName" required maxlength="80" placeholder="e.g. KVS / NVS PET Batch">
           <label class="f" for="cPrice">Price (₹)</label><input class="in" id="cPrice" type="number" min="0" required placeholder="e.g. 499">
           <label class="f" for="cDesc">What's included (optional)</label><textarea class="in" id="cDesc" rows="2" maxlength="300" placeholder="e.g. All KVS/NVS PET videos, notes & mock tests"></textarea>
+          <div class="row">
+            <div style="flex:1;min-width:150px"><label class="f" for="cValid">Validity</label><select class="in" id="cValid"><option value="lifetime">Lifetime</option><option value="3">3 months</option><option value="6">6 months</option><option value="12" selected>12 months</option><option value="24">24 months</option><option value="date">Till a fixed date (exam)</option></select></div>
+            <div style="flex:1;min-width:150px;display:none" id="cDateWrap"><label class="f" for="cDate">Valid till</label><input class="in" id="cDate" type="date"></div>
+          </div>
           <label class="chk" style="border:0;margin-top:6px"><input type="checkbox" id="cAll"><span><b>All-in-One combo</b> <span class="hi">— unlocks every lesson in every course</span></span></label>
           <div class="row" style="margin-top:10px"><button class="btn alt" id="cBtn">Save course</button><button class="btn sm ghost" type="button" id="cCancel" style="display:none">Cancel edit</button><span class="hi" id="cStatus"></span></div>
         </form>

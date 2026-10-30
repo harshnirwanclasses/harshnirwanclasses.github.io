@@ -123,8 +123,16 @@ let unsubs=[];   // listeners that depend on the signed-in user
 const filt={videos:"All",pdfs:"All"};
 const LEGACY="full";
 const itemCourses=m=>Array.isArray(m.courses)&&m.courses.length?m.courses:[LEGACY];
-const accessAll=a=>!!a&&(a.all===true||!("courses" in a));
-function hasCourse(cs){if(S.isOwner)return true;const a=S.access;if(!a)return false;if(accessAll(a))return true;return cs.some(c=>a.courses&&a.courses[c])}
+const nowMs=()=>Date.now();
+const live=x=>!x||x>nowMs();                       // 0/undefined = lifetime
+const accessAll=a=>!!a&&(a.all===true||!("courses" in a))&&live(a.allExp);
+const courseLive=(a,c)=>!!(a&&a.courses&&a.courses[c])&&live(a.exp&&a.exp[c]);
+function hasCourse(cs){if(S.isOwner)return true;const a=S.access;if(!a)return false;if(accessAll(a))return true;return cs.some(c=>courseLive(a,c))}
+function expiryOf(a,c){if(!a)return null;if(c.all||accessAll(a))return a.allExp||0;return a.exp&&a.exp[c.id]||0}
+const fmtMs=ms=>new Date(ms).toLocaleDateString("en-IN",{day:"numeric",month:"short",year:"numeric"});
+function validityText(c){const v=c.validity||"lifetime";if(v==="lifetime")return "Lifetime access";if(v==="date")return c.validTill?`Valid till ${fmtD(c.validTill)}`:"Lifetime access";return `${v} months access`}
+function calcExpiry(c,fromMs){const v=c&&c.validity||"lifetime";if(v==="lifetime")return 0;if(v==="date")return c.validTill?new Date(c.validTill+"T23:59:59").getTime():0;
+  const d=new Date(Math.max(fromMs||0,nowMs()));d.setMonth(d.getMonth()+(+v||12));return d.getTime()}
 const isOpen=m=>m.free||hasCourse(itemCourses(m));
 const hasAccess=()=>S.isOwner||!!S.access;
 function courseList(){
@@ -132,7 +140,8 @@ function courseList(){
   return [{id:LEGACY,name:"Full Course",price:S.payCfg.price||"",desc:S.payCfg.note||"",all:true}];
 }
 function courseById(id){return courseList().find(c=>c.id===id)||(id===LEGACY?{id:LEGACY,name:"Full Course",price:S.payCfg.price||"",all:true}:null)}
-function ownsCourse(c){if(S.isOwner)return true;const a=S.access;if(!a)return false;if(accessAll(a))return true;if(c.all)return false;return !!(a.courses&&a.courses[c.id])}
+function ownsCourse(c){if(S.isOwner)return true;const a=S.access;if(!a)return false;if(accessAll(a))return true;if(c.all)return false;return courseLive(a,c.id)}
+function wasExpired(c){const a=S.access;if(!a||S.isOwner)return false;if(c.all||c.id===LEGACY)return (a.all===true||!("courses" in a))&&!live(a.allExp);return !!(a.courses&&a.courses[c.id])&&!live(a.exp&&a.exp[c.id])}
 const courseNames=ids=>ids.map(id=>courseById(id)?.name).filter(Boolean);
 document.addEventListener("click",e=>{const b=e.target.closest("[data-course]");if(b)S.selCourse=b.dataset.course},true);
 
@@ -261,30 +270,36 @@ function renderPremium(){
   const pc=$("#premiumCard"),cl=courseList(),prices=cl.map(c=>+c.price).filter(x=>x>0),minP=prices.length?Math.min(...prices):0;
   if(S.isOwner){pc.innerHTML=`<div class="premium ok"><div class="spread"><div><b>Paid students: ${S.students.length}</b><div class="hi">${S.courses.length?`${S.courses.length} course(s)`:`Course price ₹${esc(S.payCfg.price||"—")}`}${S.requests.length?` · <b style="color:var(--orange)">${S.requests.length} payment(s) to check</b>`:""}</div></div><button class="btn sm" data-go="owner">Manage</button></div></div>`;return}
   const a=S.access;
+  const soonC=a?courseList().find(c=>{const e=ownsCourse(c)&&expiryOf(a,c);return e&&e-nowMs()<7*864e5}):null;
+  const expC=a?courseList().find(c=>wasExpired(c)):null;
+  if(soonC||expC){const c=soonC||expC;pc.innerHTML=`<div class="premium"><div class="spread"><div><b>🔁 ${soonC?`${esc(c.name)} expires ${fmtMs(expiryOf(a,c))}`:`${esc(c.name)} has expired`}</b><div class="hi">Renew now to keep learning · रिन्यू करें</div></div><button class="btn sm alt" data-go="unlock" data-course="${esc(c.id)}">Renew</button></div></div>`;return}
   if(a&&accessAll(a)){pc.innerHTML=`<div class="premium ok"><b>⭐ All courses unlocked</b><div class="hi">सभी वीडियो और नोट्स उपलब्ध हैं — everything is open for you.</div></div>`;return}
   if(a){const mine=courseList().filter(c=>ownsCourse(c)).map(c=>c.name);const more=courseList().some(c=>!ownsCourse(c));
     pc.innerHTML=`<div class="premium ok"><div class="spread"><div><b>⭐ Your courses</b><div class="hi">${esc(mine.join(" · ")||"Unlocked")}</div></div>${more?`<button class="btn sm ghost" data-go="unlock">More courses</button>`:""}</div></div>`;return}
   pc.innerHTML=`<div class="premium"><div class="spread"><div><b>🔒 Unlock ${cl.length>1?"a course":"full course"}</b><div class="hi">Video lectures + PDF notes${minP?` · <b style="color:var(--orange)">${cl.length>1?"from ":""}₹${minP}</b>`:""}</div></div><button class="btn sm alt" data-go="unlock">${cl.length>1?"View courses":"Unlock"}</button></div></div>`;
 }
 function courseCards(selId,interactive){
-  return courseList().map(c=>{const owned=!S.isOwner&&ownsCourse(c),p=S.myPayments[c.id],on=c.id===selId;
-    const badge=owned?`<span class="pill">✓ Unlocked</span>`:p&&p.status==="pending"?`<span class="pill o">⏳ Verifying</span>`:p&&p.status==="rejected"?`<span class="pill r">Not verified</span>`:c.all&&courseList().length>1?`<span class="pill o">Best value</span>`:"";
+  return courseList().map(c=>{const owned=!S.isOwner&&ownsCourse(c),p=S.myPayments[c.id],on=c.id===selId,exp=owned?expiryOf(S.access,c):0,expd=wasExpired(c);
+    const soon=owned&&exp&&exp-nowMs()<7*864e5;
+    const badge=owned?(soon?`<span class="pill r">Expires ${fmtMs(exp)}</span>`:`<span class="pill">✓ Unlocked</span>`):p&&p.status==="pending"?`<span class="pill o">⏳ Verifying</span>`:expd?`<span class="pill r">Expired — renew</span>`:p&&p.status==="pending"?`<span class="pill o">⏳ Verifying</span>`:p&&p.status==="rejected"?`<span class="pill r">Not verified</span>`:c.all&&courseList().length>1?`<span class="pill o">Best value</span>`:"";
     return `<label class="ccard ${on?"on":""} ${owned?"owned":""}">${interactive?`<input type="radio" name="course" value="${esc(c.id)}" ${on?"checked":""}>`:""}
-      <div class="spread" style="align-items:flex-start"><div><b>${esc(c.name)}</b> ${badge}${c.desc?`<div class="hi" style="margin-top:2px">${esc(c.desc)}</div>`:""}${c.all&&!c.desc&&courseList().length>1?`<div class="hi" style="margin-top:2px">Includes every course & lesson</div>`:""}</div><div class="cp">${c.price?`₹${esc(c.price)}`:"—"}</div></div></label>`}).join("");
+      <div class="spread" style="align-items:flex-start"><div><b>${esc(c.name)}</b> ${badge}${c.desc?`<div class="hi" style="margin-top:2px">${esc(c.desc)}</div>`:""}${c.all&&!c.desc&&courseList().length>1?`<div class="hi" style="margin-top:2px">Includes every course & lesson</div>`:""}<div class="hi" style="margin-top:2px;color:#9fd3b4">⏳ ${owned?(exp?`Valid till ${fmtMs(exp)}`:"Lifetime access"):esc(validityText(c))}</div></div><div class="cp">${c.price?`₹${esc(c.price)}`:"—"}</div></div></label>`}).join("");
 }
 function renderUnlock(){
   const el=$("#unlockArea"), c=S.payCfg;
   if(!S.fb){el.innerHTML=`<div class="card">Payments will open soon.</div>`;return}
   const cl=courseList();
   if(S.isOwner){el.innerHTML=`<div class="card">You're the owner — you have full access. This is how students see your courses:</div>`+courseCards(null,false);return}
-  if(S.access&&accessAll(S.access)){el.innerHTML=`<div class="premium ok"><b>⭐ All courses unlocked</b><p class="hi">Everything is open. Happy studying!</p><div style="margin-top:8px"><button class="btn sm" data-go="videos">Go to videos</button></div></div>`;return}
+  if(S.access&&accessAll(S.access)&&!(S.access.allExp&&S.access.allExp-nowMs()<15*864e5)){el.innerHTML=`<div class="premium ok"><b>⭐ All courses unlocked</b><p class="hi">Everything is open. Happy studying!</p><div style="margin-top:8px"><button class="btn sm" data-go="videos">Go to videos</button></div></div>`;return}
   if(!cl.some(x=>+x.price>0)&&!c.upi){el.innerHTML=`<div class="card">Course fee details will be posted soon. Check the notice board.</div>`;return}
   let sel=courseById(S.selCourse);
-  if(!sel||(!S.isOwner&&ownsCourse(sel)))sel=cl.find(x=>!ownsCourse(x))||cl[0];
+  if(!sel&&S.access&&accessAll(S.access))sel=cl.find(x=>x.all)||null;
+  const canRenew=x=>{const e=expiryOf(S.access,x);return ownsCourse(x)&&e&&e-nowMs()<15*864e5};
+  if(!sel||(!S.isOwner&&ownsCourse(sel)&&!canRenew(sel)))sel=cl.find(x=>!ownsCourse(x)||canRenew(x))||cl[0];
   S.selCourse=sel.id;
   const head=`<div class="hi" style="margin-bottom:8px">${cl.length>1?"Choose a course · कोर्स चुनें":"Course fee"}</div>`+courseCards(sel.id,cl.length>1);
   if(!S.user){el.innerHTML=head+`<div class="card"><b>Step 1 · Sign in</b><div class="hi">Google account से साइन इन करें ताकि भुगतान के बाद आपका कोर्स खुल सके।</div><div style="margin-top:10px"><button class="btn" id="unlockSignIn">🔐 Sign in with Google</button></div></div>`;$("#unlockSignIn").onclick=signIn;bindCourseRadios();return}
-  if(ownsCourse(sel)){el.innerHTML=head+`<div class="premium ok"><b>✓ You already have ${esc(sel.name)}</b><div style="margin-top:8px"><button class="btn sm" data-go="videos">Go to videos</button></div></div>`;bindCourseRadios();return}
+  if(ownsCourse(sel)&&!canRenew(sel)){const e=expiryOf(S.access,sel);el.innerHTML=head+`<div class="premium ok"><b>✓ You already have ${esc(sel.name)}</b><div class="hi">${e?`Valid till ${fmtMs(e)}`:"Lifetime access"}</div><div style="margin-top:8px"><button class="btn sm" data-go="videos">Go to videos</button></div></div>`;bindCourseRadios();return}
   const price=sel.price||"";
   const p=S.myPayments[sel.id];
   const upiUrl=c.upi?`upi://pay?pa=${encodeURIComponent(c.upi)}&pn=${encodeURIComponent(c.name||"Harsh Nirwan Classes")}${price?`&am=${encodeURIComponent(price)}`:""}&cu=INR&tn=${encodeURIComponent(("HNC "+sel.name).slice(0,40))}`:"";
@@ -293,7 +308,8 @@ function renderUnlock(){
   let status="";
   if(p&&p.status==="pending") status=`<div class="notice">⏳ <b>Payment submitted for ${esc(sel.name)}</b> (ref ${esc(p.utr)}). It will unlock automatically once verified — usually within a few hours.<small>भुगतान जाँच के बाद कोर्स अपने आप खुल जाएगा</small></div>`;
   if(p&&p.status==="rejected") status=`<div class="notice" style="border-color:var(--red);background:rgba(255,90,90,.1)">❌ We couldn't find this payment (ref ${esc(p.utr)}). Check the reference number and submit again, or contact us on WhatsApp.</div>`;
-  el.innerHTML=head+status+`
+  const renewNote=ownsCourse(sel)?`<div class="notice">🔁 <b>Renew ${esc(sel.name)}</b> — your access ends ${fmtMs(expiryOf(S.access,sel))}. Renewing adds the new period after that date.</div>`:wasExpired(sel)?`<div class="notice">🔁 Your ${esc(sel.name)} access has expired. Pay again to renew.</div>`:"";
+  el.innerHTML=head+renewNote+status+`
   <div class="card"><b>Step 1 · Pay ${price?`₹${esc(price)}`:""} for ${esc(sel.name)}</b><div class="hi">PhonePe / Google Pay / Paytm से भुगतान करें</div>
    ${(S.qrImg||DEFAULT_QR||c.upi)?`<div class="qrwrap" style="text-align:center"><div class="qrbox" id="payQr"><div class="empty" style="padding:30px 0;color:#555">⏳</div></div>
      <div style="font-weight:700">Scan & pay ${price?`<span style="color:var(--gold)">₹${esc(price)}</span>`:""}</div>
@@ -322,7 +338,8 @@ async function submitPayment(e){
   st.textContent="Submitting…";
   try{
     const sel=courseById(S.selCourse)||courseList()[0];
-    await setDoc(doc(db,"payments",S.user.uid+"_"+sel.id),{uid:S.user.uid,courseId:sel.id,courseName:String(sel.name||"").slice(0,80),name:(S.user.displayName||"").slice(0,80),email:(S.user.email||"").slice(0,120),
+    const prev=S.myPayments[sel.id];const pid=prev&&prev.status!=="approved"&&prev._id?prev._id:S.user.uid+"_"+sel.id+(prev&&prev.status==="approved"?"_r"+Date.now():"");
+    await setDoc(doc(db,"payments",pid),{uid:S.user.uid,courseId:sel.id,courseName:String(sel.name||"").slice(0,80),name:(S.user.displayName||"").slice(0,80),email:(S.user.email||"").slice(0,120),
       phone:$("#prPhone").value.trim().slice(0,15),utr:utr.slice(0,40),amount:String($("#prAmt").value||"").slice(0,10),status:"pending",createdAt:serverTimestamp()});
     toast("Submitted — we'll verify and unlock soon");
   }catch(err){st.textContent="Could not submit: "+errMsg(err)}
@@ -361,6 +378,7 @@ $("#upForm").onsubmit=async e=>{
   const st=$("#upStatus"),btn=$("#upBtn"),bar=$("#upBar");
   const src=document.querySelector('input[name="src"]:checked').value, free=$("#upFree").checked;
   if(!free&&S.courses.some(c=>!c.all)&&!document.querySelector("#upCourses input:checked")){st.textContent="Choose at least one course, or tick Free preview.";return}
+  if(document.querySelectorAll("#upCourses input:checked").length>4&&!free){st.textContent="A lesson can be in at most 4 courses (use the All-in-One combo for everything).";return}
   let type,loc={},sizeBytes=0,source=src,pendingHtml=null,pendingPdf=null;
   if(src==="upload"){
     const f=upFile.files[0]; if(!f){st.textContent="Choose a file first.";return}
@@ -421,7 +439,9 @@ function renderRequests(){
   renderPremium();
 }
 function renderStudents(){
-  $("#stuList").innerHTML=S.students.length?S.students.map(s=>{const cs=accessAll(s)?[`<span class="tag c">All courses</span>`]:Object.keys(s.courses||{}).map(id=>`<span class="tag c">${esc(courseById(id)?.name||"Removed course")} <button data-rmc="${esc(s.id)}|${esc(id)}" title="Remove this course" style="color:#ff9a9a;margin-left:2px">×</button></span>`);
+  $("#stuList").innerHTML=S.students.length?S.students.map(s=>{const chip=(label,exp,key,rm)=>{const ok=live(exp);return `<span class="tag ${ok?"c":""}" style="${ok?"":"background:rgba(255,90,90,.14);color:#ff9a9a"}">${esc(label)} · ${exp?(ok?"till ":"expired ")+fmtMs(exp):"lifetime"} <button data-ext="${esc(s.id)}|${esc(key)}" title="Extend" style="color:var(--gold);margin-left:2px">⟳</button>${rm?`<button data-rmc="${esc(s.id)}|${esc(key)}" title="Remove this course" style="color:#ff9a9a;margin-left:2px">×</button>`:""}</span>`};
+   const allOn=s.all===true||!("courses" in s);
+   const cs=[...(allOn?[chip("All courses",s.allExp,"__all",false)]:[]),...Object.keys(s.courses||{}).map(id=>chip(courseById(id)?.name||"Removed course",s.exp&&s.exp[id],id,true))];
    return `<div class="item"><div class="thumb p">⭐</div><div class="meta"><b>${esc(s.name||"Student")}</b>
    <small>${esc(s.email||"")}${s.phone?" · "+esc(s.phone):""}<br>Last: ₹${esc(s.amount||"—")}${s.utr?" · Ref "+esc(s.utr):""} · ${fmtDate(s.approvedAt)}</small><div>${cs.join("")}</div></div>
    <button class="btn sm danger" data-revoke="${esc(s.id)}">Remove all</button></div>`}).join(""):`<div class="empty">No paid students yet.</div>`;
@@ -434,7 +454,9 @@ document.addEventListener("click",e=>{
     askConfirm(`Approve ${q.name||"this student"} (₹${q.amount||"?"}, ref ${q.utr})? Only approve after the money shows in your account.`,"Approve",async()=>{
       try{const uid=q.uid||q.id,cid=q.courseId||LEGACY,c=courseById(cid),ex=S.students.find(s=>s.id===uid);
         const body={name:q.name||"",email:q.email||"",phone:q.phone||"",amount:q.amount||"",utr:q.utr||"",approvedAt:serverTimestamp()};
-        if(cid===LEGACY||(c&&c.all)||(ex&&accessAll(ex)))body.all=true; else {body.courses={...((ex&&ex.courses)||{}),[cid]:true};}
+        if(cid===LEGACY||(c&&c.all)){body.all=true;body.allExp=calcExpiry(c,ex&&accessAll(ex)?ex.allExp:0)}
+        else if(ex&&accessAll(ex)&&!ex.allExp){body.all=true}
+        else {body.courses={...((ex&&ex.courses)||{}),[cid]:true};body.exp={...((ex&&ex.exp)||{}),[cid]:calcExpiry(c,ex&&courseLive(ex,cid)?ex.exp&&ex.exp[cid]:0)}}
         await setDoc(doc(db,"access",uid),body,{merge:true});
         await updateDoc(doc(db,"payments",q.id),{status:"approved"});toast("Approved — "+(c?c.name:"course")+" unlocked")}catch(err){toast("Failed: "+errMsg(err))}})}
   if(r){const q=S.requests.find(x=>x.id===r.dataset.reject);if(!q)return;
@@ -476,7 +498,7 @@ function renderCourseAdmin(){
   if(!$("#cList"))return;
   const cl=S.courses.slice().sort((x,y)=>(x.all?1:0)-(y.all?1:0)||(+x.price||0)-(+y.price||0));
   $("#cList").innerHTML=cl.length?cl.map(c=>{const n=S.materials.filter(m=>!m.free&&itemCourses(m).includes(c.id)).length;
-    return `<div class="card"><div class="spread"><div><b>${esc(c.name)}</b> ${c.all?`<span class="pill o">All-in-One</span>`:""}<div class="hi">${c.all?"Unlocks every lesson":`${n} lesson(s)`}${c.desc?" · "+esc(c.desc):""}</div></div><div class="cp" style="font-weight:800;color:var(--gold)">₹${esc(c.price)}</div></div>
+    return `<div class="card"><div class="spread"><div><b>${esc(c.name)}</b> ${c.all?`<span class="pill o">All-in-One</span>`:""}<div class="hi">${c.all?"Unlocks every lesson":`${n} lesson(s)`} · ${esc(validityText(c))}${c.desc?" · "+esc(c.desc):""}</div></div><div class="cp" style="font-weight:800;color:var(--gold)">₹${esc(c.price)}</div></div>
     <div class="row" style="margin-top:8px"><button class="btn sm ghost" data-cedit="${esc(c.id)}">Edit</button><button class="btn sm danger" data-cdel="${esc(c.id)}">Delete</button></div></div>`}).join("")
     :`<div class="empty">No courses yet. Until you add one, students see a single "Full Course" at your Settings price.</div>`;
   $("#cSuggest").innerHTML=cl.length?"":`<div class="card"><b>Quick start</b><div class="hi">Create these 4 courses in one tap — you can edit names & prices after.</div><div class="hi" style="margin:6px 0">${SUGGESTED.map(s=>`${esc(s.name)} ₹${s.price}`).join(" · ")}</div><button class="btn sm alt" id="cAddSug">Add suggested courses</button></div>`;
@@ -484,7 +506,7 @@ function renderCourseAdmin(){
   const opts=cl.filter(c=>!c.all);
   $("#cLegacy").innerHTML=leg.length&&opts.length?`<div class="card"><b>${leg.length} older premium lesson(s) aren't in any course yet</b><div class="hi">Only "All-in-One" and earlier Full-Course students can open them. Move them into a course:</div>
     <div class="row" style="margin-top:8px"><select class="in" id="cLegSel" style="flex:1">${opts.map(c=>`<option value="${esc(c.id)}">${esc(c.name)}</option>`).join("")}</select><button class="btn sm alt" id="cLegBtn">Move all</button></div></div>`:"";
-  const sb=$("#cAddSug");if(sb)sb.onclick=async()=>{sb.disabled=true;try{for(const s of SUGGESTED)await S.fb.addDoc(S.fb.collection(S.fb.db,"courses"),{...s,all:!!s.all,createdAt:S.fb.serverTimestamp()});toast("4 courses added")}catch(err){toast("Failed: "+errMsg(err));sb.disabled=false}};
+  const sb=$("#cAddSug");if(sb)sb.onclick=async()=>{sb.disabled=true;try{for(const s of SUGGESTED)await S.fb.addDoc(S.fb.collection(S.fb.db,"courses"),{...s,all:!!s.all,validity:"12",createdAt:S.fb.serverTimestamp()});toast("4 courses added")}catch(err){toast("Failed: "+errMsg(err));sb.disabled=false}};
   const lb=$("#cLegBtn");if(lb)lb.onclick=async()=>{const cid=$("#cLegSel").value;lb.disabled=true;try{for(const m of leg)await S.fb.updateDoc(S.fb.doc(S.fb.db,"materials",m.id),{courses:[cid]});toast("Lessons moved")}catch(err){toast("Failed: "+errMsg(err))}lb.disabled=false};
   renderUpCourses();
 }
@@ -497,15 +519,16 @@ function renderUpCourses(){
   $("#upCoursesWrap").style.display=$("#upFree").checked?"none":"block";
 }
 $("#upFree").addEventListener("change",renderUpCourses);
-function resetCForm(){$("#cForm").reset();$("#cId").value="";$("#cFormTitle").textContent="Add a course / batch";$("#cCancel").style.display="none";$("#cStatus").textContent=""}
+function resetCForm(){$("#cForm").reset();$("#cDateWrap").style.display="none";$("#cId").value="";$("#cFormTitle").textContent="Add a course / batch";$("#cCancel").style.display="none";$("#cStatus").textContent=""}
 $("#cCancel").onclick=resetCForm;
 $("#cForm").onsubmit=async e=>{e.preventDefault();if(!S.isOwner)return;const {db,doc,collection,setDoc,updateDoc,serverTimestamp}=S.fb;
-  const body={name:$("#cName").value.trim().slice(0,80),price:String($("#cPrice").value||"").slice(0,8),desc:$("#cDesc").value.trim().slice(0,300),all:$("#cAll").checked};
+  const body={name:$("#cName").value.trim().slice(0,80),price:String($("#cPrice").value||"").slice(0,8),desc:$("#cDesc").value.trim().slice(0,300),all:$("#cAll").checked,validity:$("#cValid").value,validTill:$("#cValid").value==="date"?$("#cDate").value:""};
+  if(body.validity==="date"&&!body.validTill){$("#cStatus").textContent="Pick the 'Valid till' date.";return}
   if(!body.name||!body.price){$("#cStatus").textContent="Name and price are required.";return}
   try{const id=$("#cId").value;if(id)await updateDoc(doc(db,"courses",id),body);else await setDoc(doc(collection(db,"courses")),{...body,createdAt:serverTimestamp()});toast(id?"Course updated":"Course added");resetCForm()}
   catch(err){$("#cStatus").textContent="Could not save: "+errMsg(err)}};
 document.addEventListener("click",e=>{
-  const ed=e.target.closest("[data-cedit]");if(ed){const c=S.courses.find(x=>x.id===ed.dataset.cedit);if(!c)return;$("#cId").value=c.id;$("#cName").value=c.name||"";$("#cPrice").value=c.price||"";$("#cDesc").value=c.desc||"";$("#cAll").checked=!!c.all;$("#cFormTitle").textContent="Edit course";$("#cCancel").style.display="inline-flex";$("#cForm").scrollIntoView({behavior:"smooth",block:"center"})}
+  const ed=e.target.closest("[data-cedit]");if(ed){const c=S.courses.find(x=>x.id===ed.dataset.cedit);if(!c)return;$("#cId").value=c.id;$("#cName").value=c.name||"";$("#cPrice").value=c.price||"";$("#cDesc").value=c.desc||"";$("#cAll").checked=!!c.all;$("#cValid").value=c.validity||"lifetime";$("#cDate").value=c.validTill||"";$("#cDateWrap").style.display=$("#cValid").value==="date"?"block":"none";$("#cFormTitle").textContent="Edit course";$("#cCancel").style.display="inline-flex";$("#cForm").scrollIntoView({behavior:"smooth",block:"center"})}
   const dl=e.target.closest("[data-cdel]");if(dl){const c=S.courses.find(x=>x.id===dl.dataset.cdel);if(!c)return;
     askConfirm(`Delete course "${c.name}"? Lessons stay, but students can't buy this course any more. Students who already bought it keep access only to lessons still in another course they own.`,"Delete",async()=>{try{await S.fb.deleteDoc(S.fb.doc(S.fb.db,"courses",c.id));toast("Course deleted")}catch(err){toast("Failed: "+errMsg(err))}})}
   const ec=e.target.closest("[data-editc]");if(ec&&S.isOwner){const m=S.materials.find(x=>x.id===ec.dataset.editc);if(!m)return;const cur=new Set(itemCourses(m));
@@ -513,11 +536,22 @@ document.addEventListener("click",e=>{
     $("#mBody").innerHTML=`<div class="cchk">${S.courses.filter(c=>!c.all).map(c=>`<label><input type="checkbox" value="${esc(c.id)}" ${cur.has(c.id)?"checked":""}>${esc(c.name)}</label>`).join("")}</div><div class="row" style="margin-top:12px"><button class="btn alt" id="ecSave">Save</button></div>`;
     $("#modal").classList.add("on");
     $("#ecSave").onclick=async()=>{const sel=[...document.querySelectorAll("#mBody input:checked")].map(i=>i.value);if(!sel.length){toast("Pick at least one course");return}
+      if(sel.length>4){toast("Max 4 courses per lesson");return}
       try{await S.fb.updateDoc(S.fb.doc(S.fb.db,"materials",m.id),{courses:sel});closeModal();toast("Saved")}catch(err){toast("Failed: "+errMsg(err))}}}
   const rc=e.target.closest("[data-rmc]");if(rc&&S.isOwner){const [uid,cid]=rc.dataset.rmc.split("|");const s=S.students.find(x=>x.id===uid);if(!s)return;
     askConfirm(`Remove ${courseById(cid)?.name||"this course"} from ${s.name||"this student"}?`,"Remove",async()=>{const {db,doc,setDoc,deleteDoc}=S.fb;const cs={...(s.courses||{})};delete cs[cid];
       try{if(!Object.keys(cs).length&&!s.all)await deleteDoc(doc(db,"access",uid));else{const {id,...rest}=s;await setDoc(doc(db,"access",uid),{...rest,courses:cs})}toast("Removed")}catch(err){toast("Failed: "+errMsg(err))}})}
 });
+
+document.addEventListener("click",e=>{const b=e.target.closest("[data-ext]");if(!b||!S.isOwner)return;const [uid,key]=b.dataset.ext.split("|");const s=S.students.find(x=>x.id===uid);if(!s)return;
+  const cur=key==="__all"?s.allExp||0:(s.exp&&s.exp[key])||0;
+  $("#mTitle").textContent=`Extend: ${s.name||"student"} — ${key==="__all"?"All courses":(courseById(key)?.name||"course")}`;
+  $("#mBody").innerHTML=`<div class="hi" style="margin-bottom:10px">Current: ${cur?(live(cur)?"till ":"expired ")+fmtMs(cur):"lifetime"}</div><div class="row">${[1,3,6,12].map(m=>`<button class="btn sm ghost" data-extm="${m}">+${m} month${m>1?"s":""}</button>`).join("")}<button class="btn sm alt" data-extm="0">Lifetime</button></div>`;
+  $("#modal").classList.add("on");
+  $("#mBody").onclick=async ev=>{const t=ev.target.closest("[data-extm]");if(!t)return;const m=+t.dataset.extm;let nx=0;if(m){const d=new Date(Math.max(cur||0,nowMs()));d.setMonth(d.getMonth()+m);nx=d.getTime()}
+    const {db,doc,setDoc}=S.fb;const {id,...rest}=s;const body={...rest};if(key==="__all")body.allExp=nx;else body.exp={...(s.exp||{}),[key]:nx};
+    try{await setDoc(doc(db,"access",uid),body);closeModal();toast(nx?"Extended till "+fmtMs(nx):"Set to lifetime")}catch(err){toast("Failed: "+errMsg(err))}}});
+$("#cValid").onchange=()=>{$("#cDateWrap").style.display=$("#cValid").value==="date"?"block":"none"};
 
 /* =================== payment QR =================== */
 const DEFAULT_QR="payment-qr.png";
@@ -735,7 +769,7 @@ async function onUser(user){
         if(!first&&S.access&&before!==JSON.stringify({a:S.access.all,c:S.access.courses}))toast("🎉 Payment verified — your course is unlocked!");
         first=false; renderAll();
       },()=>{}));
-      unsubs.push(F.onSnapshot(F.query(F.collection(F.db,"payments"),F.where("uid","==",user.uid)),s=>{S.myPayments={};s.docs.forEach(d=>{const x=d.data();const k=x.courseId||LEGACY;const prev=S.myPayments[k];if(!prev||tsMs(x.createdAt)>=tsMs(prev.createdAt))S.myPayments[k]=x});if($("#v-unlock").classList.contains("on"))renderUnlock()},()=>{}));
+      unsubs.push(F.onSnapshot(F.query(F.collection(F.db,"payments"),F.where("uid","==",user.uid)),s=>{S.myPayments={};s.docs.forEach(d=>{const x={...d.data(),_id:d.id};const k=x.courseId||LEGACY;const prev=S.myPayments[k];if(!prev||tsMs(x.createdAt)>=tsMs(prev.createdAt))S.myPayments[k]=x});if($("#v-unlock").classList.contains("on"))renderUnlock()},()=>{}));
     }
   }
   renderAll(); renderRequests(); renderStudents(); renderQList();
