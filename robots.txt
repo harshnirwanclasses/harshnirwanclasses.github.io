@@ -1,2 +1,4 @@
 User-agent: *
 Allow: /
+
+Sitemap: https://harshnirwanclasses.github.io/sitemap.xml
