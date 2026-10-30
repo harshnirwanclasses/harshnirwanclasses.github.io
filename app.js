@@ -917,9 +917,12 @@ async function countVisit(){
   if(!S.fb||!S.fb.increment)return;const k=dayKey();
   if(LS.get("owner",0)||LS.get("visited",null)===k)return;LS.set("visited",k);
   const {db,doc,updateDoc,setDoc,increment}=S.fb;
-  for(const id of [k,"total"]){try{await updateDoc(doc(db,"stats",id),{n:increment(1)})}catch(e){try{await setDoc(doc(db,"stats",id),{n:1})}catch(_){}}}
+  for(const id of [k,"total"]){try{await updateDoc(doc(db,"stats",id),{n:increment(1)})}catch(e){try{await setDoc(doc(db,"stats",id),{n:1})}catch(e2){console.warn("visit count failed",e2&&e2.code);LS.set("visited",null)}}}
 }
-function renderVisitors(){const el=$("#visCount");if(!el)return;const t=S.stats.total?.n||0,td=S.stats[dayKey()]?.n||0;el.innerHTML=t?`👀 <b>${t.toLocaleString("en-IN")}</b> visitors · ${td.toLocaleString("en-IN")} today`:""}
+function renderVisitors(){const t=S.stats.total?.n||0,td=S.stats[dayKey()]?.n||0;
+  const html=`👀 <b>${t.toLocaleString("en-IN")}</b> visitors · <b>${td.toLocaleString("en-IN")}</b> today`;
+  const el=$("#visCount");if(el)el.innerHTML=html;
+  const hv=$("#homeVis");if(hv)hv.innerHTML=`<div class="card" style="padding:10px 14px;text-align:center;font-size:.85rem">${html}${S.isOwner?`<div class="hi" style="font-size:.72rem">Your own visits as owner aren't counted</div>`:""}</div>`}
 async function renderVisitorStats(){const el=$("#statsArea");if(!el||!S.isOwner)return;
   const days=[...Array(30)].map((_,i)=>{const d=new Date();d.setDate(d.getDate()-i);return d});
   const v=d=>S.stats[dayKey(d)]?.n||0;const last7=days.slice(0,7).reverse(),max=Math.max(1,...last7.map(v));
@@ -929,7 +932,7 @@ async function renderVisitorStats(){const el=$("#statsArea");if(!el||!S.isOwner)
    <div class="card"><div class="spread"><b>Paid students</b><span class="pill">${S.students.length}</span></div><div class="hi" style="margin-top:6px">A visitor is counted once per phone/browser per day. Your own visits as owner are not counted.</div></div>`}
 document.addEventListener("click",e=>{const b=e.target.closest('[data-pane="pStats"]');if(b)renderVisitorStats()});
 
-function renderAll(){renderLive();if(S.isOwner)renderLiveAdmin();renderTests();if(S.isOwner)renderTestAdmin();renderVacancies();if(S.isOwner)renderCourseAdmin();renderLibrary("videos");renderLibrary("pdfs");renderMine();renderStats();renderNotices();renderPremium();setRole();renderAcct();if($("#v-unlock").classList.contains("on"))renderUnlock()}
+function renderAll(){renderVisitors();renderLive();if(S.isOwner)renderLiveAdmin();renderTests();if(S.isOwner)renderTestAdmin();renderVacancies();if(S.isOwner)renderCourseAdmin();renderLibrary("videos");renderLibrary("pdfs");renderMine();renderStats();renderNotices();renderPremium();setRole();renderAcct();if($("#v-unlock").classList.contains("on"))renderUnlock()}
 
 /* =================== practice =================== */
 let BANK=[];
